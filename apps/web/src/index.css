@@ -1,0 +1,92 @@
+@import "tailwindcss";
+
+/* ─── Tailwind v4 CSS-first tokens (OKLCH) — المرجع: DESIGN.md §2 ─── */
+@theme {
+  --color-canvas: oklch(0.982 0.004 250);
+  --color-surface: oklch(1 0 0);
+  --color-ink: oklch(0.235 0.018 265);
+  --color-muted: oklch(0.55 0.02 260);
+  --color-line: oklch(0.9 0.006 250);
+  --color-growth: oklch(0.585 0.15 165);
+  --color-growth-deep: oklch(0.48 0.13 165);
+  --color-ember: oklch(0.58 0.16 32);
+  --color-hold: oklch(0.75 0.13 85);
+
+  --font-sans: "IBM Plex Sans Arabic", system-ui, "Segoe UI", Tahoma, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --radius-card: 1rem;
+  --radius-ctl: 0.625rem;
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+
+  --animate-rise: rise 0.45s var(--ease-out) both;
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+}
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+.dark {
+  --color-canvas: oklch(0.2 0.015 260);
+  --color-surface: oklch(0.25 0.015 260);
+  --color-ink: oklch(0.93 0.01 250);
+  --color-muted: oklch(0.7 0.02 260);
+  --color-line: oklch(0.32 0.015 260);
+  --color-growth: oklch(0.72 0.14 165);
+}
+
+/* ─── Base: typography, focus, motion (better-typography + a11y + emil) ─── */
+@layer base {
+  * { border-color: var(--color-line); }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    @apply bg-canvas text-ink antialiased;
+    font-family: var(--font-sans);
+    line-height: 1.6;
+  }
+  h1, h2, h3 {
+    /* العربية أطول صعوداً ونزولاً من اللاتينية: 1.1 اللاتيني يرصّ السطور فوق بعضها */
+    line-height: 1.5;
+    letter-spacing: 0;
+  }
+  p { text-wrap: pretty; }
+  .tnum { font-variant-numeric: tabular-nums; }
+
+  :focus-visible {
+    outline: 2px solid var(--color-growth);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection { background: oklch(0.585 0.15 165 / 0.22); }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  .btn-press:active { transform: scale(0.96); }
+  .card-rise { animation: rise 0.45s var(--ease-out) both; }
+  /* دخول متدرج لمرة واحدة (40-80ms بين العناصر) — اللوحات فقط، لا POS */
+  .rise-in { animation: rise 0.5s var(--ease-out) both; }
+}
+
+@layer base {
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line);
+    border-radius: 8px;
+    border: 2px solid var(--color-canvas);
+  }
+}
+
+/* توحيد خط التنبيهات مع الواجهة */
+[data-sonner-toaster] { font-family: var(--font-sans); }

@@ -1,0 +1,12 @@
+# بدّل النطاقات بنطاقاتك. Caddy يصدر شهادات HTTPS تلقائياً (Let's Encrypt).
+{
+	email admin@example.dz
+}
+
+app.example.dz {
+	reverse_proxy web:80
+}
+
+api.example.dz {
+	reverse_proxy api:4000
+}

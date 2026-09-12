@@ -1,0 +1,36 @@
+name: ci
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: dz
+          POSTGRES_PASSWORD: dzpass
+          POSTGRES_DB: dzsaas
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dz"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://dz:dzpass@localhost:5432/dzsaas?schema=public
+      JWT_SECRET: ci-secret-not-production
+      OPERATOR_KEY: ci-operator-key
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma validate --schema apps/api/prisma/schema.prisma
+      - run: npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
+      - run: npm run verify --workspace apps/api
+      - run: DATABASE_URL=$DATABASE_URL npm run verify:pg --workspace apps/api
+      - run: npm run build --workspace apps/web

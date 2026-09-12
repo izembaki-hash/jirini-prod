@@ -1,0 +1,26 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+    // عزل المستأجرين: كل مستند يحمل tenant_id يطابق claim المستخدم.
+    function isTenant(tenantId) {
+      return request.auth != null && request.auth.token.tenant_id == tenantId;
+    }
+    function roleIn(roles) {
+      return request.auth != null && request.auth.token.role in roles;
+    }
+    match /tenants/{tenantId}/{col}/{doc} {
+      allow read: if isTenant(tenantId);
+      allow create, update: if isTenant(tenantId)
+        && request.resource.data.tenant_id == tenantId
+        && roleIn(['owner', 'manager', 'cashier', 'cook']);
+      allow delete: if isTenant(tenantId) && roleIn(['owner', 'manager']);
+    }
+    // بوابة الزبون العامة: قراءة المنيو + إنشاء طلب فقط (بدون auth إداري).
+    match /public_menus/{tenantId} {
+      allow read: if true;
+    }
+    match /tenants/{tenantId}/collections/orders/{doc} {
+      allow create: if true; // يُقيَّد بحجم الحقول عبر App Check في الإنتاج
+    }
+  }
+}

@@ -1,0 +1,344 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// كل جدول يحمل tenant_id + فهرس مركّب (tenant_id, ...) للعزل والأداء.
+
+model Tenant {
+  id              String   @id @default(cuid())
+  slug            String   @unique
+  name            String
+  type            String   // restaurant | shop
+  lang            String   @default("ar")
+  plan            String   @default("starter")
+  phone           String
+  address         String
+  logoUrl         String?
+  crmEnabled      Boolean  @default(true)
+  overtimeEnabled Boolean  @default(false)
+  tablesCount     Int      @default(4)
+  branches        Branch[]
+  products        Product[]
+  orders          Order[]
+  employees       Employee[]
+  shifts          Shift[]
+  customers       Customer[]
+  goals           Goal[]
+  users           User[]
+  subscription    Subscription?
+  recipeItems     RecipeItem[]
+  suppliers       Supplier[]
+  purchases       Purchase[]
+  supplierPayments SupplierPayment[]
+  alerts          Alert[]
+  drivers         Driver[]
+  payments        Payment[]
+  overheads       Overhead[]
+  createdAt       DateTime @default(now())
+}
+
+model Branch {
+  id       String  @id @default(cuid())
+  tenantId String  @map("tenant_id")
+  tenant   Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name     String
+  address  String
+  products Product[]
+  orders   Order[]
+  shifts   Shift[]
+  @@index([tenantId])
+}
+
+model Product {
+  id             String  @id @default(cuid())
+  tenantId       String  @map("tenant_id")
+  tenant         Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branchId       String  @map("branch_id")
+  branch         Branch  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  name           String
+  nameFr         String?
+  buyPrice       Float
+  sellPrice      Float
+  qty            Float
+  minQty         Float   @default(5)
+  barcode        String?
+  imageUrl       String?
+  category       String?
+  shelf          String?
+  expiryDate     DateTime?
+  wholesalePrice Float?
+  active         Boolean @default(true)
+  saleable       Boolean @default(true)
+  dishRecipes    RecipeItem[] @relation("DishRecipes")
+  usedIn         RecipeItem[] @relation("IngredientUsage")
+  @@index([tenantId, branchId])
+  @@index([tenantId, barcode])
+}
+
+model Order {
+  id          String   @id @default(cuid())
+  num         Int
+  tenantId    String   @map("tenant_id")
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branchId    String   @map("branch_id")
+  branch      Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  shiftId     String?  @map("shift_id")
+  kind        String
+  tableNo     String?
+  status      String   @default("pending")
+  lines       Json
+  discount    Float    @default(0)
+  tax         Float    @default(0)
+  total       Float
+  payMethod   String   @map("pay_method")
+  customer    String?
+  phone       String?
+  address     String?
+  rating      Int?
+  consumed    Json?
+  driverId    String?  @map("driver_id")
+  driver      Driver?  @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  @@index([tenantId, branchId, status, createdAt])
+  @@index([tenantId, num])
+}
+
+model Shift {
+  id          String    @id @default(cuid())
+  tenantId    String    @map("tenant_id")
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branchId    String    @map("branch_id")
+  branch      Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  cashierId   String    @map("cashier_id")
+  openedAt    DateTime  @default(now())
+  closedAt    DateTime?
+  openingCash Float
+  closingCash Float?
+  note        String    @default("")
+  @@index([tenantId, branchId, closedAt])
+}
+
+model Employee {
+  id         String   @id @default(cuid())
+  tenantId   String   @map("tenant_id")
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branchId   String   @map("branch_id")
+  name       String
+  role       String
+  hiredAt    DateTime @default(now())
+  hourlyRate Float
+  attendance Attendance[]
+  @@index([tenantId])
+}
+
+// الاشتراكات: trialing (تسجيل ذاتي 30 يوم) → active → past_due → suspended.
+// الدفع اليدوي (CCP/تحويل) برقم مرجعي يؤكده المشغّل، وSATIM لاحقاً عبر webhook.
+model Subscription {
+  id           String   @id @default(cuid())
+  tenantId     String   @unique @map("tenant_id")
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan         String
+  status       String   @default("trialing")
+  startedAt    DateTime @default(now()) @map("started_at")
+  expiresAt    DateTime @map("expires_at")
+  amountDzd    Int      @default(0) @map("amount_dzd")
+  lastRef      String?  @map("last_ref")
+  confirmedBy  String?  @map("confirmed_by")
+  confirmedAt  DateTime? @map("confirmed_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  @@index([status, expiresAt])
+}
+
+// حسابات الدخول: كل موظف قد يملك حساباً (الكاشير/الطباخ/المدير). كلمة السر مشفّرة bcrypt.
+model User {
+  id           String   @id @default(cuid())
+  tenantId     String   @map("tenant_id")
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  employeeId   String?  @map("employee_id")
+  name         String
+  phone        String
+  passwordHash String   @map("password_hash")
+  role         String
+  branchId     String?  @map("branch_id")
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  @@unique([tenantId, phone])
+  @@index([tenantId])
+}
+
+// سجل حركة المخزون: كل زيادة/نقصان موثّقة بسببها.
+model StockMove {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  productId String   @map("product_id")
+  delta     Float
+  reason    String
+  createdAt DateTime @default(now())
+  @@index([tenantId, productId, createdAt])
+}
+
+model Attendance {
+  id         String   @id @default(cuid())
+  tenantId   String   @map("tenant_id")
+  employeeId String   @map("employee_id")
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date       String
+  inAt       DateTime @map("in_at")
+  outAt      DateTime? @map("out_at")
+  overtimeMin Int @default(0) @map("overtime_min")
+  @@index([tenantId, employeeId, date])
+}
+
+model Customer {
+  id       String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name     String
+  phone    String
+  address  String?
+  @@index([tenantId, phone])
+}
+
+model Goal {
+  id      String @id @default(cuid())
+  tenantId String @map("tenant_id")
+  tenant  Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  title   String
+  target  Float
+  saved   Float  @default(0)
+  monthly Float
+  @@index([tenantId])
+}
+
+// ─── الشريحة 1: وصفات + مورّدون/ديون + تنبيهات ───
+
+// وصفة طبق: الطبق (منتج نهائي) ← مكونات (منتجات مخزون) + الكمية لكل وحدة.
+// مطاعم فقط على مستوى الواجهة؛ الخادم يطبقها لأي مستأجر يعرّفها.
+model RecipeItem {
+  id           String  @id @default(cuid())
+  tenantId     String  @map("tenant_id")
+  tenant       Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  dishId       String  @map("dish_id")
+  dish         Product @relation("DishRecipes", fields: [dishId], references: [id], onDelete: Cascade)
+  ingredientId String  @map("ingredient_id")
+  ingredient   Product @relation("IngredientUsage", fields: [ingredientId], references: [id], onDelete: Restrict)
+  qty          Float
+  @@unique([dishId, ingredientId])
+  @@index([tenantId, dishId])
+}
+
+model Supplier {
+  id       String  @id @default(cuid())
+  tenantId String  @map("tenant_id")
+  tenant   Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name     String
+  phone    String
+  address  String?
+  notes    String?
+  active   Boolean @default(true)
+  purchases Purchase[]
+  payments SupplierPayment[]
+  createdAt DateTime @default(now())
+  @@unique([tenantId, phone])
+  @@index([tenantId])
+}
+
+model Purchase {
+  id         String  @id @default(cuid())
+  num        Int
+  tenantId   String  @map("tenant_id")
+  tenant     Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  supplierId String  @map("supplier_id")
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  lines      Json
+  total      Float
+  paid       Float   @default(0)
+  status     String  @default("unpaid")
+  date       DateTime @default(now())
+  notes      String?
+  payments   SupplierPayment[]
+  @@index([tenantId, supplierId, date])
+}
+
+model SupplierPayment {
+  id         String  @id @default(cuid())
+  tenantId   String  @map("tenant_id")
+  tenant     Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  supplierId String  @map("supplier_id")
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  purchaseId String  @map("purchase_id")
+  purchase   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  amount     Float
+  method     String  @default("cash")
+  ref        String?
+  date       DateTime @default(now())
+  @@index([tenantId, supplierId, purchaseId])
+}
+
+// تنبيهات الخادم: نقص مكونات، عبور حد النفاد (توسّع لاحقاً).
+model Alert {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  kind      String
+  refId     String?  @map("ref_id")
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  @@index([tenantId, read, createdAt])
+}
+
+// ─── الشريحة P1: مصاريف ثابتة شهرية (كراء/كهرباء/غاز/...) تُوزع يومياً ───
+model Overhead {
+  id       String  @id @default(cuid())
+  tenantId String  @map("tenant_id")
+  tenant   Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name     String
+  kind     String  @default("other")
+  monthly  Float
+  active   Boolean @default(true)
+  notes    String?
+  createdAt DateTime @default(now())
+  @@index([tenantId])
+}
+
+// ─── الشريحة 2: سائقو التوصيل (داخليون وخارجيون — كيان مستقل بلا دخول) ───
+model Driver {
+  id       String  @id @default(cuid())
+  tenantId String  @map("tenant_id")
+  tenant   Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name     String
+  phone    String
+  vehicle  String?
+  kind     String  @default("internal")
+  active   Boolean @default(true)
+  orders   Order[]
+  createdAt DateTime @default(now())
+  @@unique([tenantId, phone])
+  @@index([tenantId])
+}
+
+// ─── الفوترة: SofizPay (CIB/EDAHABIA) + الدفع اليدوي ───
+// كل محاولة دفع سجل مستقل (تدقيق كامل). التفعيل عند التحقق فقط، وبشكل idempotent.
+model Payment {
+  id                 String   @id @default(cuid())
+  tenantId           String   @map("tenant_id")
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ref                String
+  plan               String
+  months             Int
+  amountDzd          Int      @map("amount_dzd")
+  email              String?
+  status             String   @default("initiated")
+  sofizTransactionId String?  @map("sofiz_transaction_id")
+  cibTransactionId   String?  @map("cib_transaction_id")
+  createdAt          DateTime @default(now())
+  confirmedAt        DateTime? @map("confirmed_at")
+  @@unique([tenantId, ref])
+  @@index([tenantId, status])
+}
