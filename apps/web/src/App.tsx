@@ -11,6 +11,8 @@ import Plans from "./pages/Plans";
 import Wizard from "./pages/Wizard";
 import Login from "./pages/Login";
 import BillingReturn from "./pages/BillingReturn";
+import SetPassword from "./pages/SetPassword";
+import Checkout from "./pages/Checkout";
 import Ops from "./pages/Ops";
 import Dashboard from "./pages/Dashboard";
 import Pos from "./pages/Pos";
@@ -82,10 +84,12 @@ export default function App() {
           <Routes>
             <Route path="/" element={<ActivitySelect />} />
             <Route path="/signup" element={<Signup />} />
-            <Route path="/plans" element={<Plans />} />
-            <Route path="/wizard" element={<Wizard />} />
+            <Route path="/plans" element={<Navigate to="/signup" replace />} />
+            <Route path="/wizard" element={<Navigate to="/signup" replace />} />
             <Route path="/login" element={<Login />} />
           <Route path="/billing/return" element={<BillingReturn />} />
+          <Route path="/checkout" element={<Checkout />} />
+          <Route path="/set-password" element={<SetPassword />} />
           <Route path="/ops" element={<Ops />} />
             <Route path="/o/:slug/menu" element={<OrderPublic />} />
             <Route path="/app" element={<RequireAuth>{app(<Dashboard />)}</RequireAuth>} />

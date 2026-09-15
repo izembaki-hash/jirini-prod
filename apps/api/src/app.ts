@@ -152,8 +152,9 @@ export async function buildApp(db?: DbPort) {
       const b = z.object({
         name: z.string().min(2), type: z.enum(["restaurant", "shop"]),
         phone: z.string().min(9), address: z.string().default(""),
-        plan: z.enum(["starter", "pro", "mega"]).default("starter"),
-        ownerName: z.string().min(2), password: z.string().min(6),
+        plan: z.enum(["starter", "pro", "mega"]).default("pro"),
+        ownerName: z.string().min(2),
+        email: z.string().email().optional(),
         lang: z.enum(["ar", "fr"]).default("ar"),
       }).parse(req.body);
       let slug = slugify(b.name);
@@ -168,17 +169,86 @@ export async function buildApp(db?: DbPort) {
         tenantId: tenant.id, branchId: branch.id, name: b.ownerName, role: "owner",
         hiredAt: algiersDay(), hourlyRate: 0,
       });
+      // مستخدم المالك بدون كلمة سر بعد — تُضبط عبر /public/set-password بعد الدفع.
       await dbx.createUser({
         tenantId: tenant.id, employeeId: emp.id, name: b.ownerName, phone: normPhone(b.phone),
-        passwordHash: await hashPassword(b.password), role: "owner", branchId: null, active: true,
+        passwordHash: "", role: "owner", branchId: null, active: true,
       });
-      const until = new Date(Date.now() + 30 * 86_400_000).toISOString();
+      res.status(201).json({ tenantId: tenant.id, slug, ownerPhone: normPhone(b.phone), email: b.email ?? null });
+    } catch (e) { next(e); }
+  });
+
+  // حساب عام: إنشاء فاتورة SofizPay لمستأجر موجود (تم إنشاؤه عبر /public/signup).
+  app.post("/public/checkout", signupLimit, async (req, res, next) => {
+    try {
+      const cfg = sofizCfg();
+      if (!cfg.account) { res.status(501).json({ error: "payments_not_configured" }); return; }
+      const b = z.object({
+        tenantId: z.string().min(1),
+        plan: z.enum(["starter", "pro", "mega"]).optional(),
+        months: z.number().int().min(1).max(12).default(1),
+        cycle: z.enum(["monthly", "yearly"]).optional(),
+        email: z.string().email(),
+        fullName: z.string().min(2).optional(),
+      }).parse(req.body);
+      const tenant = await dbx.getTenant(b.tenantId);
+      if (!tenant) { res.status(404).json({ error: "tenant_not_found" }); return; }
+      const plan = b.plan ?? tenant.plan;
+      const monthlyPrice = PLAN_PRICES[plan] ?? 2500;
+      const isYearly = b.cycle === "yearly";
+      const months = isYearly ? 12 : b.months;
+      const amount = isYearly ? monthlyPrice * 10 : monthlyPrice * b.months;
+      const ref = `NEW-${tenant.slug}-${Date.now().toString(36)}`;
+      const returnUrl = `${cfg.frontend}/billing/return?pref={id}`;
+      const payment = await dbx.createBillingPayment({
+        tenantId: tenant.id, ref, plan, months, amountDzd: amount,
+        email: b.email, status: "initiated", sofizTransactionId: null, cibTransactionId: null,
+      });
+      const realReturnUrl = `${cfg.frontend}/billing/return?pref=${payment.id}`;
+      const created = await sofizCreate(fetch, {
+        base: cfg.base, account: cfg.account, amount,
+        fullName: b.fullName ?? tenant.name, phone: tenant.phone, email: b.email,
+        returnUrl: realReturnUrl, memo: ref,
+      });
+      if (!created.ok || !created.paymentUrl || !created.cibTransactionId) {
+        await dbx.setBillingPayment(tenant.id, payment.id, { status: "failed" });
+        res.status(502).json({ error: "provider_error", detail: created.error ?? "rejected" });
+        return;
+      }
+      await dbx.setBillingPayment(tenant.id, payment.id, {
+        sofizTransactionId: created.transactionId ?? null, cibTransactionId: created.cibTransactionId,
+      });
+      // subscription مؤقتة حتى الدفع — تصبح active عند العودة الناجحة.
       await dbx.saveSubscription({
-        tenantId: tenant.id, plan: b.plan, status: "trialing",
-        startedAt: new Date().toISOString(), expiresAt: until,
-        amountDzd: PLAN_PRICES[b.plan], lastRef: null, confirmedBy: null, confirmedAt: null,
+        tenantId: tenant.id, plan, status: "pending",
+        startedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 24 * 3_600_000).toISOString(),
+        amountDzd: amount, lastRef: ref, confirmedBy: null, confirmedAt: null,
       });
-      res.status(201).json({ slug, trialUntil: until, login: { phone: normPhone(b.phone) } });
+      res.status(201).json({ paymentId: payment.id, paymentUrl: created.paymentUrl, slug: tenant.slug });
+    } catch (e) { next(e); }
+  });
+
+  // ضبط كلمة السر بعد الدفع — عام، يتحقق من الدفع لا-من التوكن.
+  app.post("/public/set-password", async (req, res, next) => {
+    try {
+      const b = z.object({
+        paymentId: z.string().min(1),
+        password: z.string().min(6),
+      }).parse(req.body);
+      const payment = await dbx.getBillingPaymentById(b.paymentId);
+      if (!payment) { res.status(404).json({ error: "payment_not_found" }); return; }
+      if (payment.status !== "paid") { res.status(402).json({ error: "payment_not_confirmed" }); return; }
+      const user = await dbx.findUserByPhone(payment.tenantId, (await dbx.getTenant(payment.tenantId))!.phone);
+      if (!user) { res.status(404).json({ error: "user_not_found" }); return; }
+      if (user.passwordHash && user.passwordHash.length > 0) {
+        // كلمة السر مضبوطة مسبقاً — حماية بسيطة (idempotent لكنها ليست reset)
+        res.json({ ok: true, slug: (await dbx.getTenant(payment.tenantId))!.slug });
+        return;
+      }
+      await dbx.setUserPassword(payment.tenantId, user.id, await hashPassword(b.password));
+      const tenant = await dbx.getTenant(payment.tenantId);
+      res.status(201).json({ ok: true, slug: tenant!.slug });
     } catch (e) { next(e); }
   });
 
@@ -789,7 +859,13 @@ export async function buildApp(db?: DbPort) {
       if (sofizIsPaid(check, cfg.account)) {
         await dbx.setBillingPayment(payment.tenantId, payment.id, { status: "paid", confirmedAt: new Date().toISOString() });
         await activateSubscription(payment.tenantId, payment.plan, payment.months, payment.ref, "sofizpay");
-        res.redirect(`${cfg.frontend}/billing/return?ok=1&pref=${payment.id}`);
+        // مستأجر جديد (تم إنشاؤه للتو عبر /public/signup): لم يضبط كلمة سر بعد.
+        // وجّهه إلى نموذج التعيين قبل تسجيل الدخول.
+        const isNew = payment.ref.startsWith("NEW-");
+        const okUrl = isNew
+          ? `${cfg.frontend}/set-password?pref=${payment.id}&ok=1`
+          : `${cfg.frontend}/billing/return?ok=1&pref=${payment.id}`;
+        res.redirect(okUrl);
       } else {
         await dbx.setBillingPayment(payment.tenantId, payment.id, { status: check.ok ? "failed" : payment.status });
         res.redirect(check.ok ? failUrl : `${cfg.frontend}/billing/return?ok=0&pref=${payment.id}&pending=1`);

@@ -133,6 +133,12 @@ export const api = {
     req<{ status: string; expiresAt?: string | null }>(`/billing/sofizpay/status/${paymentId}`),
   billingSubmitManual: (ref: string, months: number) =>
     req<{ ok: boolean; status: string }>(`/billing/submit-payment`, { method: "POST", body: JSON.stringify({ ref, months }) }),
+  publicSignup: (b: { name: string; type: "restaurant" | "shop"; phone: string; address?: string; plan?: "starter" | "pro" | "mega"; ownerName: string; email?: string; lang?: "ar" | "fr" }) =>
+    req<{ tenantId: string; slug: string; ownerPhone: string; email: string | null }>(`/public/signup`, { method: "POST", body: JSON.stringify(b) }, false),
+  publicCheckout: (b: { tenantId: string; plan?: "starter" | "pro" | "mega"; months?: number; cycle?: "monthly" | "yearly"; email: string; fullName?: string }) =>
+    req<{ paymentId: string; paymentUrl: string; slug: string }>(`/public/checkout`, { method: "POST", body: JSON.stringify(b) }, false),
+  setPassword: (paymentId: string, password: string) =>
+    req<{ ok: boolean; slug: string }>(`/public/set-password`, { method: "POST", body: JSON.stringify({ paymentId, password }) }, false),
   // ورديات وحضور ورواتب وموظفون
   employees: () => req<ApiEmployee[]>("/employees"),
   createEmployeeAccount: (e: { name: string; phone: string; password: string; role: string; hourlyRate?: number; branchId?: string }) =>

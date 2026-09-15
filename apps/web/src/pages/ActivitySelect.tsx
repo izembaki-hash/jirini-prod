@@ -30,7 +30,7 @@ export default function ActivitySelect() {
   const nav = useNavigate();
 
   const pick = (type: "restaurant" | "shop") => {
-    resetDemo(type, update);
+    update((p) => ({ ...p, businessType: type }));
     nav(`/signup?type=${type}`);
   };
   const setLang = (lang: "ar" | "fr") => {

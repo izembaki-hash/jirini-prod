@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { TrendUp, CashRegister, CookingPot } from "@phosphor-icons/react";
 import { ApiError } from "../api";
 import { useAuth } from "../auth";
@@ -13,7 +13,8 @@ export default function Login() {
   const { s } = useStore();
   const L = s.lang;
   const nav = useNavigate();
-  const [slug, setSlug] = useState("demo-resto");
+  const [q] = useSearchParams();
+  const [slug, setSlug] = useState(q.get("slug") ?? "");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
