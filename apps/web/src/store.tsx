@@ -183,29 +183,37 @@ const Ctx = createContext<{ s: State; update: (f: (s: State) => State) => void }
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [s, setS] = useState<State>(() => {
-    try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as Partial<State>;
-        // تحقق شكلي: أي نسخة قديمة/ناقصة تُهمل لصالح بذرة سليمة
-        if (parsed && Array.isArray(parsed.products) && Array.isArray(parsed.orders)) {
+    // إنتاج فقط — لا تُحمَّل بذور عند توفّر API.
+    // localStorage يُستخدم لتسهيل التفضيلات (اللغة، المظهر) فقط؛
+    // البيانات التجارية (منتجات، طلبات، ...) مصدرها الخادم دائماً عبر Layout.tsx.
+    const apiConfigured = typeof window !== "undefined" && Boolean((window as { __API_BASE?: string }).__API_BASE);
+    const raw = (() => { try { return localStorage.getItem(KEY); } catch { return null; } })();
+    if (raw && apiConfigured) {
+      try {
+        const p = JSON.parse(raw) as Partial<State>;
+        if (p && Array.isArray(p.products) && Array.isArray(p.orders)) {
           return {
-            ...parsed, booted: true,
-            tables: typeof (parsed as Partial<State>).tables === "number" ? (parsed as State).tables : 4,
-            drivers: Array.isArray((parsed as Partial<State>).drivers) ? (parsed as State).drivers : [],
-            overheads: Array.isArray((parsed as Partial<State>).overheads) ? (parsed as State).overheads : [],
-            recipes: Array.isArray((parsed as Partial<State>).recipes) ? (parsed as State).recipes : [],
-            suppliers: Array.isArray((parsed as Partial<State>).suppliers) ? (parsed as State).suppliers : [],
-            purchases: Array.isArray((parsed as Partial<State>).purchases) ? (parsed as State).purchases : [],
-            alerts: Array.isArray((parsed as Partial<State>).alerts) ? (parsed as State).alerts : [],
+            ...p, booted: true,
+            tables: typeof p.tables === "number" ? p.tables : 4,
+            drivers: Array.isArray(p.drivers) ? p.drivers : [],
+            overheads: Array.isArray(p.overheads) ? p.overheads : [],
+            recipes: Array.isArray(p.recipes) ? p.recipes : [],
+            suppliers: Array.isArray(p.suppliers) ? p.suppliers : [],
+            purchases: Array.isArray(p.purchases) ? p.purchases : [],
+            alerts: Array.isArray(p.alerts) ? p.alerts : [],
           } as State;
         }
-      }
-    } catch { /* تجاهل */ }
+      } catch { /* تجاهل */ }
+    }
     return initial("restaurant");
   });
   useEffect(() => {
-    try { localStorage.setItem(KEY, JSON.stringify({ ...s, booted: true })); } catch { /* تجاهل */ }
+    // كتابة محدودة بوجود منتجات فعلية (تجنّب البذور الوهمية في الإنتاج)
+    try {
+      if (s.products.length > 0 || s.orders.length > 0) {
+        localStorage.setItem(KEY, JSON.stringify({ ...s, booted: true }));
+      }
+    } catch { /* تجاهل */ }
   }, [s]);
   const update = useCallback((f: (s: State) => State) => setS((prev) => f(prev)), []);
   const v = useMemo(() => ({ s, update }), [s, update]);
