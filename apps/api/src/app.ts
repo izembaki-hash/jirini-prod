@@ -37,7 +37,7 @@ const zOrder = z.object({
   branchId: z.string().min(1), kind: z.enum(["dinein", "takeaway", "delivery", "qr_table"]),
   tableNo: z.string().optional(), lines: z.array(zOrderLine).min(1).max(100),
   discount: z.number().min(0).default(0), tax: z.number().min(0).default(0),
-  payMethod: z.enum(["cash", "card"]), customer: z.string().optional(),
+  payMethod: z.enum(["cash", "card", "credit"]), customer: z.string().optional(),
   phone: z.string().optional(), address: z.string().optional(),
 });
 const zShiftOpen = z.object({ branchId: z.string().min(1), openingCash: z.number().min(0), cashierId: z.string().min(1) });
@@ -395,6 +395,9 @@ export async function buildApp(db?: DbPort) {
       const sub = await subscriptionOk(dbx, t);
       if (!sub.ok) { res.status(402).json({ error: "subscription_expired", reason: sub.reason }); return; }
       const branchId = branchOf(req) ?? b.branchId;
+      if (b.payMethod === "credit" && !b.phone?.trim()) {
+        res.status(400).json({ error: "phone_required" }); return;
+      }
       const { out, map } = await buildLines(t, b.lines, branchId);
       const total = orderTotal(out, b.discount, b.tax);
       const num = await dbx.nextOrderNum(t);
@@ -419,6 +422,11 @@ export async function buildApp(db?: DbPort) {
         await dbx.createAlert({ tenantId: t, kind: "recipe_short", refId: w.productId, message: `نقص مكوّن للطلب #${num}: ${w.name} (عجز ${w.missing})`, read: false });
       }
       const full = { ...created, consumed, warnings, driver: null };
+      // البيع الآجل: دين على العميل (يُنشأ إن كان جديداً)
+      if (b.payMethod === "credit") {
+        const cust = await dbx.findOrCreateCustomer(t, b.customer?.trim() || b.phone!.trim(), normPhone(b.phone!));
+        await dbx.addCustomerDebt(t, cust.id, total);
+      }
       // حفظ المكونات المخصومة فعلياً لعكسها عند الإلغاء
       await dbx.setOrderConsumed(t, created.id, consumed).catch(() => null);
       broadcast(t, { type: "order.created", order: full });
@@ -445,6 +453,13 @@ export async function buildApp(db?: DbPort) {
         for (const c of cur.consumed ?? []) {
           try { await dbx.adjustStock(t, c.ingredientId, c.qty, `cancel-restore #${cur.num}`); }
           catch { /* تجاهل */ }
+        }
+        // إلغاء البيع الآجل يُسقط الدين
+        if (cur.payMethod === "credit" && cur.phone) {
+          try {
+            const cust = await dbx.findOrCreateCustomer(t, cur.customer ?? cur.phone, cur.phone);
+            await dbx.addCustomerDebt(t, cust.id, -cur.total);
+          } catch { /* تجاهل */ }
         }
       }
       const updated = await dbx.setOrderStatus(t, req.params.id, b.status);
@@ -544,6 +559,20 @@ export async function buildApp(db?: DbPort) {
       if (!await needCrm(req, res)) return;
       const b = z.object({ name: z.string().min(1), phone: z.string().min(9), address: z.string().optional() }).parse(req.body);
       res.status(201).json(await dbx.createCustomer({ tenantId: req.auth!.tenant_id, name: b.name, phone: normPhone(b.phone), address: b.address ?? null }));
+    } catch (e) { next(e); }
+  });
+  // تسديد دين عميل (الكاشير يحصّل)
+  app.post("/customers/:id/pay", requireAuth, requireRole("owner", "manager", "cashier"), async (req, res, next) => {
+    try {
+      if (!await needCrm(req, res)) return;
+      const b = z.object({ amount: z.number().positive(), method: z.string().default("cash"), ref: z.string().optional() }).parse(req.body);
+      res.json(await dbx.recordCustomerPayment(req.auth!.tenant_id, req.params.id, b.amount, b.method, b.ref));
+    } catch (e) { next(e); }
+  });
+  app.get("/customers/:id/payments", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
+    try {
+      if (!await needCrm(req, res)) return;
+      res.json(await dbx.listCustomerPayments(req.auth!.tenant_id, req.params.id));
     } catch (e) { next(e); }
   });
 
@@ -1127,6 +1156,7 @@ export async function buildApp(db?: DbPort) {
   const zSupplier = z.object({
     name: z.string().min(2), phone: z.string().min(7),
     address: z.string().optional(), notes: z.string().optional(), active: z.boolean().default(true),
+    openingDebt: z.number().min(0).default(0),
   });
   app.get("/suppliers", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
     try {
@@ -1134,7 +1164,7 @@ export async function buildApp(db?: DbPort) {
       const [suppliers, purchases] = await Promise.all([dbx.listSuppliers(t), dbx.listPurchases(t)]);
       res.json(suppliers.map((s) => {
         const mine = purchases.filter((p) => p.supplierId === s.id);
-        const owed = mine.reduce((x, p) => x + p.total, 0);
+        const owed = Math.round(((s.openingDebt ?? 0) + mine.reduce((x, p) => x + p.total, 0)) * 100) / 100;
         const paid = mine.reduce((x, p) => x + p.paid, 0);
         return { ...s, owed, paid, balance: Math.round((owed - paid) * 100) / 100 };
       }));
@@ -1143,10 +1173,13 @@ export async function buildApp(db?: DbPort) {
   app.post("/suppliers", requireAuth, requireRole("owner", "manager"), sensitiveLimit, async (req, res, next) => {
     try {
       const b = zSupplier.parse(req.body);
-      res.status(201).json(await dbx.createSupplier({
+      const created = await dbx.createSupplier({
         tenantId: req.auth!.tenant_id, name: b.name, phone: normPhone(b.phone),
         address: b.address ?? null, notes: b.notes ?? null, active: b.active,
-      }));
+        openingDebt: b.openingDebt,
+      });
+      const open = Math.round((created.openingDebt ?? 0) * 100) / 100;
+      res.status(201).json({ ...created, owed: open, paid: 0, balance: open });
     } catch (e) { next(e); }
   });
   app.patch("/suppliers/:id", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
@@ -1285,7 +1318,7 @@ export async function buildApp(db?: DbPort) {
     if (e.status) { res.status(e.status).json({ error: e.message }); return; }
     // سجل Prisma غير موجود (تحديث/حذف لمعرّف زائف) → 404 لا 500
     if (e.code === "P2025") { res.status(404).json({ error: "not_found" }); return; }
-    if ((e.message === "product" || e.message === "order" || e.message === "shift" || e.message === "goal" || e.message === "recipe" || e.message === "supplier" || e.message === "purchase" || e.message === "driver" || e.message === "tenant" || e.message === "payment" || e.message === "overhead") ) {
+    if ((e.message === "product" || e.message === "order" || e.message === "shift" || e.message === "goal" || e.message === "recipe" || e.message === "supplier" || e.message === "purchase" || e.message === "driver" || e.message === "tenant" || e.message === "payment" || e.message === "overhead" || e.message === "customer") ) {
       res.status(404).json({ error: "not_found" }); return;
     }
     console.error("[api]", err);

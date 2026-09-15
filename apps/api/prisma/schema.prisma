@@ -39,6 +39,7 @@ model Tenant {
   drivers         Driver[]
   payments        Payment[]
   overheads       Overhead[]
+  customerPayments CustomerPayment[]
   createdAt       DateTime @default(now())
 }
 
@@ -201,7 +202,23 @@ model Customer {
   name     String
   phone    String
   address  String?
+  balance  Float  @default(0)
+  payments CustomerPayment[]
   @@index([tenantId, phone])
+}
+
+// تسديدات ديون العملاء (البيع الآجل يرفع الرصيد، التسديد يخفضه)
+model CustomerPayment {
+  id         String   @id @default(cuid())
+  tenantId   String   @map("tenant_id")
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customerId String   @map("customer_id")
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  amount     Float
+  method     String   @default("cash")
+  ref        String?
+  date       DateTime @default(now())
+  @@index([tenantId, customerId, date])
 }
 
 model Goal {
@@ -241,6 +258,7 @@ model Supplier {
   address  String?
   notes    String?
   active   Boolean @default(true)
+  openingDebt Float @default(0) @map("opening_debt")
   purchases Purchase[]
   payments SupplierPayment[]
   createdAt DateTime @default(now())

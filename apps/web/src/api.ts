@@ -41,7 +41,7 @@ export interface ApiProduct {
 export interface ApiRecipeItem { id: string; dishId: string; ingredientId: string; qty: number }
 export interface ApiSupplier {
   id: string; name: string; phone: string; address: string | null;
-  notes: string | null; active: boolean; owed?: number; paid?: number; balance?: number;
+  notes: string | null; active: boolean; openingDebt?: number; owed?: number; paid?: number; balance?: number;
 }
 export interface ApiPurchaseLine { productId: string; name: string; qty: number; unitCost: number }
 export interface ApiPurchase {
@@ -54,7 +54,8 @@ export interface ApiOverhead { id: string; name: string; kind: string; monthly: 
 export interface ApiEmployee { id: string; name: string; role: string; hourlyRate: number; hiredAt: string; branchId: string }
 export interface ApiShift { id: string; branchId: string; cashierId: string; openedAt: string; closedAt: string | null; openingCash: number; closingCash: number | null; note: string }
 export interface ApiAtt { id: string; employeeId: string; date: string; inAt: string; outAt: string | null; overtimeMin: number }
-export interface ApiCustomer { id: string; name: string; phone: string; address: string | null }
+export interface ApiCustomer { id: string; name: string; phone: string; address: string | null; balance: number }
+export interface ApiCustomerPayment { id: string; customerId: string; amount: number; method: string; ref: string | null; date: string }
 export interface ApiGoal { id: string; title: string; target: number; saved: number; monthly: number }
 export interface ApiBranch { id: string; name: string; address: string }
 
@@ -98,7 +99,7 @@ export const api = {
     req<ApiRecipeItem[]>(`/recipes/dish/${dishId}`, { method: "PUT", body: JSON.stringify({ lines }) }),
   deleteRecipeLine: (id: string) => req<{ ok: boolean }>(`/recipes/${id}`, { method: "DELETE" }),
   listSuppliers: () => req<ApiSupplier[]>("/suppliers"),
-  createSupplier: (s: { name: string; phone: string; address?: string; notes?: string }) =>
+  createSupplier: (s: { name: string; phone: string; address?: string; notes?: string; openingDebt?: number }) =>
     req<ApiSupplier>("/suppliers", { method: "POST", body: JSON.stringify(s) }),
   createPurchase: (p: { supplierId: string; lines: { productId: string; qty: number; unitCost: number }[]; paid?: number; method?: string; ref?: string; notes?: string }) =>
     req<ApiPurchase>("/purchases", { method: "POST", body: JSON.stringify(p) }),
@@ -144,6 +145,9 @@ export const api = {
   customersList: () => req<ApiCustomer[]>("/customers"),
   customersCreate: (c: { name: string; phone: string; address?: string }) =>
     req<ApiCustomer>("/customers", { method: "POST", body: JSON.stringify(c) }),
+  customersPay: (id: string, p: { amount: number; method?: string; ref?: string }) =>
+    req<{ customer: ApiCustomer; payment: ApiCustomerPayment }>(`/customers/${id}/pay`, { method: "POST", body: JSON.stringify(p) }),
+  customerPayments: (id: string) => req<ApiCustomerPayment[]>(`/customers/${id}/payments`),
   goalsList: () => req<ApiGoal[]>("/goals"),
   goalsCreate: (g: { title: string; target: number; monthly: number }) =>
     req<ApiGoal>("/goals", { method: "POST", body: JSON.stringify(g) }),

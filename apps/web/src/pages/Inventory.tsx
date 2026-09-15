@@ -370,12 +370,13 @@ function SuppliersTab() {
   const L = s.lang;
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [opening, setOpening] = useState("");
 
   useEffect(() => {
     if (connected()) {
       api.listSuppliers().then((list) => update((p) => ({
         ...p,
-        suppliers: list.map((x) => ({ id: x.id, name: x.name, phone: x.phone, address: x.address ?? undefined, notes: x.notes ?? undefined, active: x.active, owed: x.owed, paid: x.paid, balance: x.balance })),
+        suppliers: list.map((x) => ({ id: x.id, name: x.name, phone: x.phone, address: x.address ?? undefined, notes: x.notes ?? undefined, active: x.active, openingDebt: x.openingDebt ?? 0, owed: x.owed, paid: x.paid, balance: x.balance })),
       }))).catch(() => null);
     }
   }, [update]);
@@ -385,20 +386,23 @@ function SuppliersTab() {
     if (!name.trim() || !phone.trim()) return;
     if (connected()) {
       try {
-        const created = await api.createSupplier({ name: name.trim(), phone: phone.trim() });
-        update((p) => ({ ...p, suppliers: [...p.suppliers, { id: created.id, name: created.name, phone: created.phone, active: true, owed: 0, paid: 0, balance: 0 }] }));
+        const created = await api.createSupplier({ name: name.trim(), phone: phone.trim(), openingDebt: Number(opening) || 0 });
+        update((p) => ({ ...p, suppliers: [...p.suppliers, { id: created.id, name: created.name, phone: created.phone, active: true, openingDebt: created.openingDebt ?? 0, owed: created.owed ?? 0, paid: created.paid ?? 0, balance: created.balance ?? 0 }] }));
       } catch (ex) { errToast(L, ex, t(L, "errSaving")); return; }
     } else {
       if (s.suppliers.some((x) => x.phone === phone.trim())) { toast.error(t(L, "supExistsErr")); return; }
-      update((p) => ({ ...p, suppliers: [...p.suppliers, { id: `sup${Date.now()}`, name: name.trim(), phone: phone.trim(), active: true, owed: 0, paid: 0, balance: 0 }] }));
+      const od = Number(opening) || 0;
+      update((p) => ({ ...p, suppliers: [...p.suppliers, { id: `sup${Date.now()}`, name: name.trim(), phone: phone.trim(), active: true, openingDebt: od, owed: od, paid: 0, balance: od }] }));
     }
-    setName(""); setPhone("");
+    setName(""); setPhone(""); setOpening("");
   };
 
   const bal = (supId: string, owed?: number, balance?: number) => {
     if (owed !== undefined) return { owed, balance: balance ?? 0 };
+    const sup = s.suppliers.find((x) => x.id === supId);
+    const open = sup?.openingDebt ?? 0;
     const mine = s.purchases.filter((x) => x.supplierId === supId);
-    const o = mine.reduce((x, p) => x + p.total, 0);
+    const o = open + mine.reduce((x, p) => x + p.total, 0);
     const pd = mine.reduce((x, p) => x + p.paid, 0);
     return { owed: o, balance: o - pd };
   };
@@ -410,6 +414,7 @@ function SuppliersTab() {
           <form onSubmit={add} className="flex flex-col gap-3">
             <Field label={t(L, "supName")} id="sn"><Input id="sn" value={name} onChange={(e) => setName(e.target.value)} /></Field>
             <Field label={t(L, "supPhone")} id="sp"><Input id="sp" value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" dir="ltr" /></Field>
+            <Field label={t(L, "openingDebtLb")} id="sod"><Input id="sod" value={opening} onChange={(e) => setOpening(e.target.value)} inputMode="decimal" dir="ltr" placeholder="0" /></Field>
             <Button type="submit">{t(L, "add")}</Button>
           </form>
         </CardContent>

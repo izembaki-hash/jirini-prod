@@ -36,7 +36,11 @@ export interface AttendanceRow {
   id: string; tenantId: string; employeeId: string; date: string;
   inAt: string; outAt: string | null; overtimeMin: number;
 }
-export interface CustomerRow { id: string; tenantId: string; name: string; phone: string; address: string | null }
+export interface CustomerRow { id: string; tenantId: string; name: string; phone: string; address: string | null; balance: number }
+export interface CustomerPaymentRow {
+  id: string; tenantId: string; customerId: string;
+  amount: number; method: string; ref: string | null; date: string;
+}
 export interface GoalRow { id: string; tenantId: string; title: string; target: number; saved: number; monthly: number }
 export interface BranchRow { id: string; tenantId: string; name: string; address: string }
 export interface StockMoveRow { id: string; tenantId: string; productId: string; delta: number; reason: string; createdAt: string }
@@ -49,7 +53,7 @@ export interface ConsumedRow { ingredientId: string; qty: number }
 export interface RecipeItemRow { id: string; tenantId: string; dishId: string; ingredientId: string; qty: number }
 export interface SupplierRow {
   id: string; tenantId: string; name: string; phone: string;
-  address: string | null; notes: string | null; active: boolean;
+  address: string | null; notes: string | null; active: boolean; openingDebt: number;
 }
 export interface PurchaseLineRow { productId: string; name: string; qty: number; unitCost: number }
 export interface PurchaseRow {
@@ -130,7 +134,11 @@ export interface DbPort {
   listAttendance(tenantId: string, date?: string): Promise<AttendanceRow[]>;
   // عملاء وأهداف وفروع
   listCustomers(tenantId: string): Promise<CustomerRow[]>;
-  createCustomer(c: Omit<CustomerRow, "id">): Promise<CustomerRow>;
+  createCustomer(c: Omit<CustomerRow, "id" | "balance"> & { balance?: number }): Promise<CustomerRow>;
+  findOrCreateCustomer(tenantId: string, name: string, phone: string): Promise<CustomerRow>;
+  addCustomerDebt(tenantId: string, customerId: string, delta: number): Promise<CustomerRow>;
+  recordCustomerPayment(tenantId: string, customerId: string, amount: number, method?: string, ref?: string): Promise<{ customer: CustomerRow; payment: CustomerPaymentRow }>;
+  listCustomerPayments(tenantId: string, customerId?: string): Promise<CustomerPaymentRow[]>;
   listGoals(tenantId: string): Promise<GoalRow[]>;
   createGoal(g: Omit<GoalRow, "id">): Promise<GoalRow>;
   updateGoal(tenantId: string, id: string, patch: Partial<GoalRow>): Promise<GoalRow>;
@@ -187,6 +195,7 @@ export class MemoryAdapter implements DbPort {
   shifts: ShiftRow[] = [];
   att: AttendanceRow[] = [];
   customers: CustomerRow[] = [];
+  customerPayments: CustomerPaymentRow[] = [];
   goals: GoalRow[] = [];
   branches: BranchRow[] = [];
   moves: StockMoveRow[] = [];
@@ -293,7 +302,33 @@ export class MemoryAdapter implements DbPort {
   }
 
   async listCustomers(tenantId: string) { return this.customers.filter((c) => c.tenantId === tenantId); }
-  async createCustomer(c: Omit<CustomerRow, "id">) { const r = { ...c, id: uid("c") }; this.customers.push(r); return r; }
+  async createCustomer(c: Omit<CustomerRow, "id" | "balance"> & { balance?: number }) {
+    const r: CustomerRow = { ...c, balance: c.balance ?? 0, id: uid("c") };
+    this.customers.push(r); return r;
+  }
+  async findOrCreateCustomer(tenantId: string, name: string, phone: string) {
+    const cur = this.customers.find((c) => c.tenantId === tenantId && c.phone === phone);
+    if (cur) return cur;
+    return this.createCustomer({ tenantId, name, phone, address: null });
+  }
+  async addCustomerDebt(tenantId: string, customerId: string, delta: number) {
+    const c = this.customers.find((x) => x.id === customerId && x.tenantId === tenantId);
+    if (!c) throw new Error("customer");
+    c.balance = Math.round((c.balance + delta) * 100) / 100;
+    return c;
+  }
+  async recordCustomerPayment(tenantId: string, customerId: string, amount: number, method = "cash", ref?: string) {
+    const c = this.customers.find((x) => x.id === customerId && x.tenantId === tenantId);
+    if (!c) throw new Error("customer");
+    if (!(amount > 0) || c.balance - amount < -1e-9) throw Object.assign(new Error("overpay"), { status: 400 });
+    c.balance = Math.round((c.balance - amount) * 100) / 100;
+    const payment: CustomerPaymentRow = { id: uid("cpay"), tenantId, customerId, amount, method, ref: ref ?? null, date: now() };
+    this.customerPayments.push(payment);
+    return { customer: c, payment };
+  }
+  async listCustomerPayments(tenantId: string, customerId?: string) {
+    return this.customerPayments.filter((p) => p.tenantId === tenantId && (!customerId || p.customerId === customerId)).slice(0, 200);
+  }
   async listGoals(tenantId: string) { return this.goals.filter((g) => g.tenantId === tenantId); }
   async createGoal(g: Omit<GoalRow, "id">) { const r = { ...g, id: uid("g") }; this.goals.unshift(r); return r; }
   async updateGoal(tenantId: string, id: string, patch: Partial<GoalRow>) {
@@ -338,7 +373,7 @@ export class MemoryAdapter implements DbPort {
     if (this.suppliers.some((x) => x.tenantId === s.tenantId && x.phone === s.phone)) {
       throw Object.assign(new Error("supplier_exists"), { status: 409 });
     }
-    const r = { ...s, id: uid("sup") }; this.suppliers.push(r); return r;
+    const r = { ...s, openingDebt: s.openingDebt ?? 0, id: uid("sup") }; this.suppliers.push(r); return r;
   }
   async updateSupplier(tenantId: string, id: string, patch: Partial<SupplierRow>) {
     const s = this.suppliers.find((x) => x.id === id && x.tenantId === tenantId);
@@ -495,6 +530,44 @@ export class PrismaAdapter implements DbPort {
     return PrismaAdapter.row<UserRow | null>(
       await this.m("user").findFirst({ where: { id: userId, tenantId, active: true } }));
   }
+  async listCustomers(tenantId: string) {
+    return PrismaAdapter.row<CustomerRow[]>(await this.m("customer").findMany({ where: { tenantId } }));
+  }
+  async createCustomer(c: Omit<CustomerRow, "id" | "balance"> & { balance?: number }) {
+    return PrismaAdapter.row<CustomerRow>(await this.m("customer").create({
+      data: { ...c, balance: c.balance ?? 0 },
+    }));
+  }
+  async findOrCreateCustomer(tenantId: string, name: string, phone: string) {
+    const cur = await this.m("customer").findFirst({ where: { tenantId, phone } });
+    if (cur) return PrismaAdapter.row<CustomerRow>(cur);
+    return this.createCustomer({ tenantId, name, phone, address: null });
+  }
+  async addCustomerDebt(tenantId: string, customerId: string, delta: number) {
+    const cur = await this.m("customer").findFirst({ where: { id: customerId, tenantId } });
+    if (!cur) throw new Error("customer");
+    const row = PrismaAdapter.row<CustomerRow>(cur);
+    const balance = Math.round((row.balance + delta) * 100) / 100;
+    return PrismaAdapter.row<CustomerRow>(await this.m("customer").update({ where: { id: customerId }, data: { balance } }));
+  }
+  async recordCustomerPayment(tenantId: string, customerId: string, amount: number, method = "cash", ref?: string) {
+    const cur = await this.m("customer").findFirst({ where: { id: customerId, tenantId } });
+    if (!cur) throw new Error("customer");
+    const row = PrismaAdapter.row<CustomerRow>(cur);
+    if (!(amount > 0) || row.balance - amount < -1e-9) throw Object.assign(new Error("overpay"), { status: 400 });
+    const balance = Math.round((row.balance - amount) * 100) / 100;
+    await this.m("customer").update({ where: { id: customerId }, data: { balance } });
+    const payment = PrismaAdapter.row<CustomerPaymentRow>(await this.m("customerPayment").create({
+      data: { tenantId, customerId, amount, method, ref: ref ?? null },
+    }));
+    return { customer: { ...row, balance }, payment };
+  }
+  async listCustomerPayments(tenantId: string, customerId?: string) {
+    return PrismaAdapter.row<CustomerPaymentRow[]>(await this.m("customerPayment").findMany({
+      where: { tenantId, ...(customerId ? { customerId } : {}) },
+      orderBy: { date: "desc" }, take: 200,
+    }));
+  }
   async listEmployees(tenantId: string) {
     return PrismaAdapter.row<EmployeeRow[]>(await this.m("employee").findMany({ where: { tenantId } }));
   }
@@ -629,12 +702,6 @@ export class PrismaAdapter implements DbPort {
     }));
   }
 
-  async listCustomers(tenantId: string) {
-    return PrismaAdapter.row<CustomerRow[]>(await this.m("customer").findMany({ where: { tenantId } }));
-  }
-  async createCustomer(c: Omit<CustomerRow, "id">) {
-    return PrismaAdapter.row<CustomerRow>(await this.m("customer").create({ data: c }));
-  }
   async listGoals(tenantId: string) {
     return PrismaAdapter.row<GoalRow[]>(await this.m("goal").findMany({ where: { tenantId } }));
   }
@@ -696,7 +763,9 @@ export class PrismaAdapter implements DbPort {
   }
   async createSupplier(s: Omit<SupplierRow, "id">) {
     try {
-      return PrismaAdapter.row<SupplierRow>(await this.m("supplier").create({ data: s }));
+      return PrismaAdapter.row<SupplierRow>(await this.m("supplier").create({
+        data: { ...s, openingDebt: s.openingDebt ?? 0 },
+      }));
     } catch (e) {
       if ((e as { code?: string }).code === "P2002") throw Object.assign(new Error("supplier_exists"), { status: 409 });
       throw e;

@@ -15,16 +15,16 @@ export interface OrderLine { productId: string; name: string; qty: number; price
 export type OrderStatus = "pending" | "preparing" | "ready" | "onway" | "delivered" | "cancelled";
 export interface Order {
   id: string; kind: string; table?: string; status: OrderStatus; lines: OrderLine[];
-  discount: number; pay: "cash" | "card"; customer?: string; phone?: string; address?: string;
+  discount: number; pay: "cash" | "card" | "credit"; customer?: string; phone?: string; address?: string;
   at: string; total: number; num: number; driverId?: string | null; driverName?: string;
 }
 export interface Shift { id: string; by: string; openedAt: string; closedAt: string | null; opening: number; closing: number | null; note: string }
 export interface Employee { id: string; name: string; role: Role; rate: number; hired: string }
 export interface Att { id: string; emp: string; date: string; inAt: string; outAt: string | null; ot: number }
-export interface Customer { id: string; name: string; phone: string; address?: string }
+export interface Customer { id: string; name: string; phone: string; address?: string; balance?: number }
 export interface Goal { id: string; title: string; target: number; saved: number; monthly: number }
 export interface RecipeItem { id: string; dishId: string; ingredientId: string; qty: number }
-export interface Supplier { id: string; name: string; phone: string; address?: string; notes?: string; active: boolean; owed?: number; paid?: number; balance?: number }
+export interface Supplier { id: string; name: string; phone: string; address?: string; notes?: string; active: boolean; openingDebt?: number; owed?: number; paid?: number; balance?: number }
 export interface PurchaseLine { productId: string; name: string; qty: number; unitCost: number }
 export interface Purchase { id: string; num: number; supplierId: string; lines: PurchaseLine[]; total: number; paid: number; status: string; date: string; notes?: string }
 export interface AlertItem { id: string; kind: string; refId: string | null; message: string; read: boolean }
@@ -117,7 +117,7 @@ const SHOP_SEED: Product[] = [
 
 function seedOrders(products: Product[]): Order[] {
   const now = Date.now();
-  const mk = (i: number, h: number, lines: OrderLine[], pay: "cash" | "card", status: OrderStatus = "delivered"): Order => ({
+  const mk = (i: number, h: number, lines: OrderLine[], pay: "cash" | "card" | "credit", status: OrderStatus = "delivered"): Order => ({
     id: `seed${i}`, num: 100 + i, kind: i % 3 === 0 ? "delivery" : "dinein", status,
     lines, discount: i === 2 ? 100 : 0, pay, at: new Date(now - h * 3_600_000).toISOString(),
     total: lines.reduce((s, l) => s + l.qty * l.price, 0) - (i === 2 ? 100 : 0),

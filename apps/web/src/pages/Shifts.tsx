@@ -37,6 +37,7 @@ export default function Shifts() {
   const shiftOrders = open ? s.orders.filter((o) => o.at >= open.openedAt && o.status !== "cancelled") : [];
   const cashSales = shiftOrders.filter((o) => o.pay === "cash").reduce((x, o) => x + o.total, 0);
   const cardSales = shiftOrders.filter((o) => o.pay === "card").reduce((x, o) => x + o.total, 0);
+  const creditSales = shiftOrders.filter((o) => o.pay === "credit").reduce((x, o) => x + o.total, 0);
   const expected = open ? open.opening + cashSales : 0;
   const diff = closing !== "" && open ? Number(closing) - expected : null;
   const needNote = diff !== null && Math.abs(diff) >= 1000;
@@ -99,6 +100,7 @@ export default function Shifts() {
                 <Badge tone="warn">{t(L, "openB")} · {open.by}</Badge>
                 <Badge>{t(L, "cash")}: <span className="tnum">{fmtDzd(cashSales)}</span></Badge>
                 <Badge>{t(L, "card")}: <span className="tnum">{fmtDzd(cardSales)}</span></Badge>
+                {creditSales > 0 && <Badge tone="warn">{t(L, "credit")}: <span className="tnum">{fmtDzd(creditSales)}</span></Badge>}
                 <Badge tone="ok">{t(L, "expected")}: <span className="tnum">{fmtDzd(lastDiff?.expected ?? expected)}</span></Badge>
                 <Badge>{shiftOrders.length} {t(L, "invoicesU")}</Badge>
               </div>

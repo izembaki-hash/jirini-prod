@@ -141,8 +141,16 @@ async function main() {
   await db.checkOut(tenant.id, att.id);
   ok("attendance", (await db.listAttendance(tenant.id, "2026-09-08")).length === 1);
 
-  await db.createCustomer({ tenantId: tenant.id, name: "C", phone: "0551", address: null });
-  ok("customer", (await db.listCustomers(tenant.id)).length === 1);
+  const cust = await db.createCustomer({ tenantId: tenant.id, name: "C", phone: "0551", address: null });
+  ok("customer", (await db.listCustomers(tenant.id)).length === 1 && cust.balance === 0);
+  ok("debt +100", (await db.addCustomerDebt(tenant.id, cust.id, 100)).balance === 100);
+  const cover = await db.recordCustomerPayment(tenant.id, cust.id, 200).then(() => null).catch((e: unknown) => e);
+  ok("customer overpay → 400", (cover as { status?: number })?.status === 400);
+  const settled = await db.recordCustomerPayment(tenant.id, cust.id, 100, "cash", "R1");
+  ok("customer settle", settled.customer.balance === 0 && settled.payment.ref === "R1");
+  ok("payment ledger", (await db.listCustomerPayments(tenant.id, cust.id)).length === 1);
+  const sup2 = await db.createSupplier({ tenantId: tenant.id, name: "S2", phone: "05503", address: null, notes: null, active: true, openingDebt: 250 });
+  ok("supplier openingDebt", sup2.openingDebt === 250);
   const goal = await db.createGoal({ tenantId: tenant.id, title: "G", target: 100, saved: 0, monthly: 10 });
   await db.updateGoal(tenant.id, goal.id, { saved: 50 });
   ok("goal", (await db.listGoals(tenant.id))[0]?.saved === 50);

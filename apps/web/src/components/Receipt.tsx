@@ -23,7 +23,7 @@ export function Receipt({ order, shop, lang = "ar" }: { order: Order; shop: stri
       <div className="flex justify-between font-bold">
         <span>{t(lang, "totalRow")}</span><span className="tnum">{fmtDzd(order.total)}</span>
       </div>
-      <p className="mt-2 text-center text-xs text-muted">{order.pay === "cash" ? t(lang, "cash") : t(lang, "card")} · {t(lang, "thanksNote")}</p>
+      <p className="mt-2 text-center text-xs text-muted">{order.pay === "cash" ? t(lang, "cash") : order.pay === "card" ? t(lang, "card") : t(lang, "credit")} · {t(lang, "thanksNote")}</p>
     </div>
   );
 }

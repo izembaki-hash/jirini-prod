@@ -58,7 +58,7 @@ export interface RecipeLine { productId: string; ingredientId: string; qty: numb
 export interface RecipeItem { id: string; tenant_id: string; dishId: string; ingredientId: string; qty: number; }
 export interface Supplier {
   id: string; tenant_id: string; name: string; phone: string;
-  address?: string; notes?: string; active: boolean;
+  address?: string; notes?: string; active: boolean; openingDebt?: number;
   owed?: number; paid?: number; balance?: number;
 }
 export interface PurchaseLine { productId: string; name: string; qty: number; unitCost: number; }
@@ -108,7 +108,11 @@ export interface Order {
   payMethod: PayMethod; customerName?: string; customerPhone?: string; address?: string;
   createdAt: string; total: number;
 }
-export interface Customer { id: string; tenant_id: string; name: string; phone: string; address?: string; }
+export interface Customer { id: string; tenant_id: string; name: string; phone: string; address?: string; balance?: number; }
+export interface CustomerPayment {
+  id: string; tenant_id: string; customerId: string;
+  amount: number; method: string; ref?: string; date: string;
+}
 export interface Goal {
   id: string; tenant_id: string; title: string; target: number; saved: number; monthly: number;
 }

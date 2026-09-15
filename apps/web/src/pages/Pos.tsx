@@ -27,7 +27,7 @@ function BtPrint({ order, shop }: { order: Order; shop: string }) {
             shop, num: order.num, at: new Date(order.at).toLocaleString("fr-DZ"),
             lines: order.lines.map((l) => ({ name: l.name, qty: l.qty, amount: l.qty * l.price })),
             discount: order.discount, total: order.total,
-            payLabel: order.pay === "cash" ? t(L, "cash") : t(L, "card"),
+            payLabel: order.pay === "cash" ? t(L, "cash") : order.pay === "card" ? t(L, "card") : t(L, "credit"),
             thanks: t(L, "thanksNote"), currency: L === "ar" ? "دج" : "DA",
           });
           toast.success(t(L, "btDone"));
@@ -45,7 +45,8 @@ export default function Pos() {
   const L = s.lang;
   const [q, setQ] = useState("");
   const [cart, setCart] = useState<Record<string, number>>({});
-  const [pay, setPay] = useState<"cash" | "card">("cash");
+  const [pay, setPay] = useState<"cash" | "card" | "credit">("cash");
+  const [creditPhone, setCreditPhone] = useState("");
   const [table, setTable] = useState("");
   const [kind, setKind] = useState("dinein");
   const [discount, setDiscount] = useState("0");
@@ -88,6 +89,7 @@ export default function Pos() {
   const charge = async () => {
     if (lines.length === 0) return;
     if (!s.shift || s.shift.closedAt) { toast.error(t(L, "needShiftToast")); return; }
+    if (pay === "credit" && !creditPhone.trim()) { toast.error(t(L, "creditPhoneReq")); return; }
     // المحل بلا طاولات: كل مبيعاته استلام/خارجية
     const effKind = s.businessType === "restaurant" ? kind : "takeaway";
     // متصل: الخادم هو مصدر الحقيقة (أسعار من المخزون + خصم تلقائي + ربط وردية).
@@ -97,8 +99,9 @@ export default function Pos() {
           branchId: currentBranch() ?? "main", kind: effKind, tableNo: table || undefined,
           lines: lines.map((l) => ({ productId: l.id, qty: l.qty, price: priceOf(l) })),
           discount: Number(discount) || 0, tax: 0, payMethod: pay,
+          ...(pay === "credit" ? { phone: creditPhone.trim() } : {}),
         });
-        setCart({}); setDiscount("0");
+        setCart({}); setDiscount("0"); setCreditPhone("");
         update((p) => ({
           ...p,
           products: p.products.map((pr) => {
@@ -249,8 +252,17 @@ export default function Pos() {
               <div className="flex flex-col gap-2">
                 <span className="text-sm font-semibold">{t(L, "payLb")}</span>
                 <Segmented label={t(L, "payMethodLb")} value={pay}
-                  options={[{ value: "cash", label: t(L, "cash") }, { value: "card", label: t(L, "card") }]}
+                  options={[
+                    { value: "cash", label: t(L, "cash") },
+                    { value: "card", label: t(L, "card") },
+                    { value: "credit", label: t(L, "credit") },
+                  ]}
                   onChange={setPay} />
+                {pay === "credit" && (
+                  <Field label={t(L, "creditPhoneLb")} id="crph">
+                    <Input id="crph" value={creditPhone} onChange={(e) => setCreditPhone(e.target.value)} inputMode="tel" dir="ltr" placeholder="0550…" />
+                  </Field>
+                )}
               </div>
             </div>
             <div className="flex items-center justify-between border-t border-line pt-2">

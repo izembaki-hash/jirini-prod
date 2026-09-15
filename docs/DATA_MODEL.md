@@ -8,14 +8,14 @@
 - `branches` — (tenant_id, name, address)
 - `products` — buy/sell/qty/min/barcode/shelf/expiry/wholesale/active/**saleable** + (tenant_id, branch_id). `saleable=false` = مكوّن خام: يُستبعد من POS والمنيو ويُرفض في البيع (409)
 - `recipeItems` — (فقط مطاعم في الواجهة) `dishId → ingredientId + qty` للوحدة، فريد (dish, ingredient)
-- `suppliers` — اسم/هاتف (فريد لكل مستأجر)/عنوان/ملاحظات/نشط
+- `suppliers` — اسم/هاتف (فريد لكل مستأجر)/عنوان/ملاحظات/نشط/**openingDebt** (دين قديم يُجمع مع فواتير الشراء في `balance`)
 - `purchases` — num/المورّد/بنود Json (productId/name/qty/unitCost)/total/paid/status(unpaid|partial|paid)/date. الشراء يُدخل المخزون ويحدّث `buyPrice` بآخر سعر
 - `supplierPayments` — دفعة مرتبطة بفاتورة (amount/method/ref/date)
 - `alerts` — kind(recipe_short|low_stock|wastage)/refId/message/read
 - `drivers` — اسم/هاتف (فريد)/مركبة/kind(internal|external)/نشط — بلا دخول أبداً
 - `subscriptions` — plan/status(trialing|pending|active|past_due|suspended)/startedAt/expiresAt/amountDzd/lastRef/confirmedBy
 - `payments` — سجل كل محاولة دفع SofizPay: ref فريد/plan/months/amountDzd/email/status(initiated|paid|failed|cancelled|expired)/sofizTransactionId/cibTransactionId(لا يغادر الخادم)/confirmedAt
-- `orders` — lines/discount/tax/total/pay/kind/table/status/customer/**consumed** (المكونات المخصومة فعلياً لعكسها عند الإلغاء)/**driverId** — فهرس (tenant, branch, status, createdAt DESC) للمطبخ اللحظي
+- `orders` — lines/discount/tax/total/pay(cash|card|**credit**)/kind/table/status/customer/**consumed** (المكونات المخصومة فعلياً لعكسها عند الإلغاء)/**driverId** — فهرس (tenant, branch, status, createdAt DESC) للمطبخ اللحظي. `credit` يتطلب هاتفاً: يُنشأ العميل تلقائياً ويُرفع `customers.balance`، والإلغاء يُسقط الدين
 
 ## مسارات المشغّل (`/ops/*` بمفتاح `x-operator-key` — حدود معدل صارمة)
 
@@ -36,7 +36,7 @@
 ```
 - `shifts` — opening/closing/expected/diff/note — تُربط كل فاتورة بالوردية المفتوحة
 - `employees` + `attendance` (in/out/overtimeMin) — الراتب = الساعات الفعلية × الأجر (+×1.5 للأوفر تايم عند التفعيل)
-- `customers` — اسم/هاتف/عنوان + تاريخ مشتريات (تُخفى كلياً عند تعطيل CRM)
+- `customers` — اسم/هاتف/عنوان + **balance** (دين آجل) + تاريخ مشتريات (تُخفى كلياً عند تعطيل CRM). `POST /customers/:id/pay` يُنقص الدين (منع التجاوز 400) ويسجل في **`customerPayments`** (amount/method/ref/date)
 - `goals` — title/target/saved/monthly — التقدم % وتنبيهات 25/50/75/100
 
 ## حساب الفائدة اليومية

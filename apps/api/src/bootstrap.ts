@@ -62,9 +62,9 @@ export async function maybeSeed(external?: DbPort) {
       { ingredientId: veg.id, qty: 0.3 },
     ]);
   }
-  const sup = await db.createSupplier({
+  const sup =   await db.createSupplier({
     tenantId: tenant.id, name: "مطحنة الشرق", phone: "0550777888",
-    address: "السوق", notes: null, active: true,
+    address: "السوق", notes: null, active: true, openingDebt: 0,
   });
   if (couscous) {
     const pur = await db.createPurchase({

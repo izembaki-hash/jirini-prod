@@ -32,16 +32,6 @@ export default function Settings() {
 
   return (
     <div className="flex flex-col gap-4">
-      <nav aria-label={t(L, "prefsT")} className="flex gap-1.5 overflow-x-auto pb-0.5 print:hidden">
-        {[
-          ["sec-conn", t(L, "connT")], ["sec-bill", t(L, "billingT")],
-          ...(s.businessType === "restaurant" ? [["sec-tables", t(L, "tablesT")] as const] : []),
-          ["sec-oh", t(L, "ohTitle")], ["sec-prefs", t(L, "prefsT")],
-          ["sec-sec", t(L, "secT")], ["sec-data", t(L, "backupT")],
-        ].map(([id, lb]) => (
-          <a key={id} href={`#${id}`} className="shrink-0 whitespace-nowrap rounded-full border border-line bg-surface px-3.5 py-2 text-xs font-bold hover:border-growth">{lb}</a>
-        ))}
-      </nav>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <Card>
         <div id="sec-conn" className="scroll-mt-20" />

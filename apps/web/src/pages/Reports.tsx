@@ -28,6 +28,7 @@ export default function Reports() {
   const perDay = days.map((d) => inRange.filter((o) => o.at.slice(0, 10) === d.key).reduce((x, o) => x + o.total, 0));
   const cashSales = live.filter((o) => o.pay === "cash").reduce((x, o) => x + o.total, 0);
   const cardSales = live.filter((o) => o.pay === "card").reduce((x, o) => x + o.total, 0);
+  const creditSales = live.filter((o) => o.pay === "credit").reduce((x, o) => x + o.total, 0);
 
   const counts: Record<string, number> = {};
   const rev: Record<string, number> = {};
@@ -94,6 +95,7 @@ export default function Reports() {
               <span className="text-xs text-muted">{t(L, "byMethod")}:</span>
               <Badge>{t(L, "cash")}: <span className="tnum">{fmtDzd(cashSales)}</span></Badge>
               <Badge>{t(L, "card")}: <span className="tnum">{fmtDzd(cardSales)}</span></Badge>
+              {creditSales > 0 && <Badge>{t(L, "credit")}: <span className="tnum">{fmtDzd(creditSales)}</span></Badge>}
             </div>
           </div>
           <div className="flex flex-col gap-2">
