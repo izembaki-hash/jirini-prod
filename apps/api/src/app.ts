@@ -849,7 +849,11 @@ export async function buildApp(db?: DbPort) {
       const payment = await dbx.getBillingPaymentById(pref);
       if (!payment) { res.redirect(failUrl); return; }
       if (payment.status === "paid") {
-        res.redirect(`${cfg.frontend}/billing/return?ok=1&pref=${payment.id}`); return;
+        const isNew = payment.ref.startsWith("NEW-");
+        const okUrl = isNew
+          ? `${cfg.frontend}/set-password?pref=${payment.id}&ok=1`
+          : `${cfg.frontend}/billing/return?ok=1&pref=${payment.id}`;
+        res.redirect(okUrl); return;
       }
       if (!payment.cibTransactionId || !cfg.account) {
         await dbx.setBillingPayment(payment.tenantId, payment.id, { status: "failed" });
