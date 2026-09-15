@@ -1,5 +1,7 @@
-// عميل الـAPI الإنتاجي. بدون VITE_API_URL → وضع تجريبي محلي (localStorage).
-export const API_BASE: string = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") ?? "";
+// عميل الـAPI الإنتاجي. نفس الأصل افتراضياً (يُمرَّر عبر البروكسي في الإنتاج).
+// اضبط VITE_API_URL صراحةً لتوجيهه لخادم آخر (مثلاً http://localhost:4000 للتطوير المحلي).
+const envUrl = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") ?? "";
+export const API_BASE: string = envUrl || (typeof window !== "undefined" ? window.location.origin : "");
 
 export function getToken(): string | null {
   try { return localStorage.getItem("dz-token"); } catch { return null; }
