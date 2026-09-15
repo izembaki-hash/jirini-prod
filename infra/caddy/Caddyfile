@@ -1,12 +1,103 @@
-# بدّل النطاقات بنطاقاتك. Caddy يصدر شهادات HTTPS تلقائياً (Let's Encrypt).
-{
-	email admin@example.dz
-}
+# إنتاج أحادي المضيف: الواجهة + API خلف نفس الأصل (Caddy :80).
+# مهم: `/X*` (بدون شرطة) تطابق المسار العاري `/X` والمسارات الفرعية معاً —
+# أما `/X/*` فتفوّت المسار العاري فيسقط على الواجهة ويرجع HTML بدل JSON.
+:80 {
+    header Strict-Transport-Security max-age=31536000;
 
-app.example.dz {
-	reverse_proxy web:80
-}
+    # صفحة عودة الدفع للواجهة — قبل قاعدة /billing* حتى لا تذهب للـAPI
+    handle /billing/return* {
+        reverse_proxy web:80
+    }
 
-api.example.dz {
-	reverse_proxy api:4000
+    handle /health {
+        reverse_proxy api:4000
+    }
+
+    handle /tenant {
+        reverse_proxy api:4000
+    }
+
+    handle /auth* {
+        reverse_proxy api:4000
+    }
+
+    handle /products* {
+        reverse_proxy api:4000
+    }
+
+    handle /orders* {
+        reverse_proxy api:4000
+    }
+
+    handle /customers* {
+        reverse_proxy api:4000
+    }
+
+    handle /suppliers* {
+        reverse_proxy api:4000
+    }
+
+    handle /purchases* {
+        reverse_proxy api:4000
+    }
+
+    handle /shifts* {
+        reverse_proxy api:4000
+    }
+
+    handle /employees* {
+        reverse_proxy api:4000
+    }
+
+    handle /attendance* {
+        reverse_proxy api:4000
+    }
+
+    handle /branches* {
+        reverse_proxy api:4000
+    }
+
+    handle /drivers* {
+        reverse_proxy api:4000
+    }
+
+    handle /alerts* {
+        reverse_proxy api:4000
+    }
+
+    handle /goals* {
+        reverse_proxy api:4000
+    }
+
+    handle /wastage* {
+        reverse_proxy api:4000
+    }
+
+    handle /overheads* {
+        reverse_proxy api:4000
+    }
+
+    handle /billing* {
+        reverse_proxy api:4000
+    }
+
+    handle /ops* {
+        reverse_proxy api:4000
+    }
+
+    handle /public* {
+        reverse_proxy api:4000
+    }
+
+    handle /stream* {
+        reverse_proxy api:4000
+    }
+
+    handle /upload* {
+        reverse_proxy api:4000
+    }
+
+    handle {
+        reverse_proxy web:80
+    }
 }

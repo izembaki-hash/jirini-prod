@@ -23,6 +23,9 @@ async function req<T>(path: string, init?: RequestInit, auth = true): Promise<T>
     if (t) headers.Authorization = `Bearer ${t}`;
   }
   const r = await fetch(`${API_BASE}${path}`, { ...init, headers: { ...headers, ...(init?.headers as Record<string, string> ?? {}) } });
+  // حماية: أي استجابة HTML (خطأ توجيه بروكسي) تُرفض صراحةً بدل تسميم الحالة الصامت
+  const ctype = r.headers.get("content-type") ?? "";
+  if (ctype.includes("text/html")) throw new ApiError(502, "bad_gateway");
   const body = await r.json().catch(() => ({}));
   if (!r.ok) throw new ApiError(r.status, (body as { error?: string }).error ?? "internal");
   return body as T;
