@@ -122,7 +122,7 @@ export const api = {
   assignDriver: (orderId: string, driverId: string | null) =>
     req<ApiOrder>(`/orders/${orderId}/driver`, { method: "PATCH", body: JSON.stringify({ driverId }) }),
   billingStatus: () => req<{ plan?: string; status: string; expiresAt?: string; amountDzd?: number; online?: boolean; payInstructions?: { ar: string; ccp: string } }>("/billing/status"),
-  billingInitiate: (b: { plan?: string; months: number; email: string; fullName?: string }) =>
+  billingInitiate: (b: { plan?: string; months: number; cycle?: "monthly" | "yearly"; email: string; fullName?: string }) =>
     req<{ paymentId: string; paymentUrl: string }>(`/billing/sofizpay/initiate`, { method: "POST", body: JSON.stringify(b) }),
   billingReturnStatus: (paymentId: string) =>
     req<{ status: string; expiresAt?: string | null }>(`/billing/sofizpay/status/${paymentId}`),

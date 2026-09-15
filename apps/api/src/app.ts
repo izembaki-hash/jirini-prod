@@ -734,6 +734,7 @@ export async function buildApp(db?: DbPort) {
       const b = z.object({
         plan: z.enum(["starter", "pro", "mega"]).optional(),
         months: z.number().int().min(1).max(12).default(1),
+        cycle: z.enum(["monthly", "yearly"]).optional(),
         email: z.string().email(),
         fullName: z.string().min(2).optional(),
       }).parse(req.body);
@@ -741,10 +742,13 @@ export async function buildApp(db?: DbPort) {
       const tenant = await dbx.getTenant(t);
       if (!tenant) { res.status(404).json({ error: "not_found" }); return; }
       const plan = b.plan ?? tenant.plan;
-      const amount = (PLAN_PRICES[plan] ?? 2500) * b.months;
+      const monthlyPrice = PLAN_PRICES[plan] ?? 2500;
+      const isYearly = b.cycle === "yearly";
+      const months = isYearly ? 12 : b.months;
+      const amount = isYearly ? monthlyPrice * 10 : monthlyPrice * b.months;
       const ref = `SUB-${tenant.slug}-${Date.now().toString(36)}`;
       const payment = await dbx.createBillingPayment({
-        tenantId: t, ref, plan, months: b.months, amountDzd: amount,
+        tenantId: t, ref, plan, months, amountDzd: amount,
         email: b.email, status: "initiated", sofizTransactionId: null, cibTransactionId: null,
       });
       const returnUrl = `${cfg.frontend}/billing/return?pref=${payment.id}`;

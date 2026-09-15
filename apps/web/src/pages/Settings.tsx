@@ -53,14 +53,6 @@ export default function Settings() {
       <Card><div id="sec-bill" className="scroll-mt-20" /><CardHeader><CardTitle>{t(L, "billingT")}</CardTitle></CardHeader>
         <CardContent className="flex flex-col gap-3">
           {session && <BillingPanel />}
-          <div className="flex gap-2" role="group" aria-label={t(L, "billingT")}>
-            {PLAN_META.map((p) => (
-              <button key={p.id} onClick={() => update((prev) => ({ ...prev, plan: p.id }))} aria-pressed={s.plan === p.id}
-                className={`h-11 flex-1 rounded-[10px] border text-sm font-bold ${s.plan === p.id ? "border-growth bg-growth/10 text-growth-deep" : "border-line"}`}>
-                {t(L, p.key)} <span className="tnum">{p.price}</span>
-              </button>
-            ))}
-          </div>
           <p className="text-xs text-muted">{t(L, "billingNote")}</p>
           <Field label={t(L, "taxLb")} id="tax">
             <input id="tax" value={tax} onChange={(e) => setTax(e.target.value)} inputMode="decimal"
@@ -121,7 +113,8 @@ function BillingPanel() {
   const { s } = useStore();
   const L = s.lang;
   const [info, setInfo] = useState<{ plan?: string; status: string; expiresAt?: string; online?: boolean } | null>(null);
-  const [plan, setPlan] = useState(s.plan);
+  const [plan, setPlan] = useState<PlanId>(s.plan);
+  const [cycle, setCycle] = useState<"monthly" | "yearly">("monthly");
   const [months, setMonths] = useState("1");
   const [email, setEmail] = useState("");
   const [ref, setRef] = useState("");
@@ -136,11 +129,22 @@ function BillingPanel() {
     : st === "pending" ? t(L, "billPending") : st === "past_due" ? t(L, "billPastDue")
     : st === "suspended" || st === "expired" ? t(L, "billExpired") : st === "none" ? t(L, "billNone") : st;
 
+  const selectedPlan = PLAN_META.find((p) => p.id === plan) ?? PLAN_META[1];
+  const monthlyPrice = selectedPlan.price;
+  const yearlyTotal = monthlyPrice * 10;
+  const yearlySavings = monthlyPrice * 2;
+  const monthlyTotal = monthlyPrice * (cycle === "monthly" ? Math.max(1, Number(months) || 1) : 1);
+
   const pay = async () => {
     if (!email.includes("@")) { toast.error(t(L, "billEmail")); return; }
     setBusy(true);
     try {
-      const r = await api.billingInitiate({ plan, months: Number(months), email });
+      const r = await api.billingInitiate({
+        plan,
+        months: cycle === "yearly" ? 12 : Number(months),
+        cycle,
+        email,
+      });
       window.location.href = r.paymentUrl;
     } catch (ex) {
       toast.error(ex instanceof ApiError && ex.status === 501 ? t(L, "billNotConf") : t(L, "errSaving"));
@@ -151,7 +155,7 @@ function BillingPanel() {
   const sendRef = async () => {
     if (ref.trim().length < 3) return;
     try {
-      await api.billingSubmitManual(ref.trim(), Number(months) || 1);
+      await api.billingSubmitManual(ref.trim(), cycle === "yearly" ? 12 : (Number(months) || 1));
       toast.success(t(L, "billPendingNote"));
       setRef("");
       api.billingStatus().then((r) => setInfo(r)).catch(() => null);
@@ -170,20 +174,66 @@ function BillingPanel() {
       {info?.online !== false && (
         <>
           <b className="text-[13px]">{t(L, "billOnlineT")}</b>
-          <div className="grid grid-cols-3 gap-2">
-            <Field label={t(L, "billPlan")} id="bp">
-              <select id="bp" value={plan} onChange={(e) => setPlan(e.target.value as PlanId)} className="h-11 rounded-[10px] border border-line bg-surface px-2 text-sm">
-                {PLAN_META.map((p) => <option key={p.id} value={p.id}>{t(L, p.key)} · <span className="tnum">{p.price}</span></option>)}
-              </select>
+
+          <div className="flex flex-col gap-2">
+            <div className="grid grid-cols-3 gap-2">
+              {PLAN_META.map((p) => {
+                const active = plan === p.id;
+                return (
+                  <button key={p.id} type="button" onClick={() => setPlan(p.id)}
+                    aria-pressed={active}
+                    className={`relative flex flex-col items-start gap-1 rounded-[12px] border p-3 text-start transition ${active ? "border-growth bg-growth/10 shadow-sm" : "border-line bg-surface hover:border-line-strong"}`}>
+                    <span className="text-sm font-bold">{t(L, p.key)}</span>
+                    <span className="tnum text-lg font-bold text-growth-deep">{fmtDzd(p.price)}<span className="text-xs font-normal text-muted"> {t(L, "billPerMonth")}</span></span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div role="group" aria-label="cycle" className="relative mx-auto inline-flex items-center rounded-full border border-line bg-surface p-1 shadow-sm">
+              <button type="button" onClick={() => setCycle("monthly")}
+                aria-pressed={cycle === "monthly"}
+                className={`relative z-10 rounded-full px-5 py-1.5 text-sm font-bold transition ${cycle === "monthly" ? "bg-growth text-white shadow" : "text-muted hover:text-ink"}`}>
+                {t(L, "billCycleMonthly")}
+              </button>
+              <button type="button" onClick={() => setCycle("yearly")}
+                aria-pressed={cycle === "yearly"}
+                className={`relative z-10 flex items-center gap-2 rounded-full px-5 py-1.5 text-sm font-bold transition ${cycle === "yearly" ? "bg-growth text-white shadow" : "text-muted hover:text-ink"}`}>
+                {t(L, "billCycleYearly")}
+                <span className={`tnum rounded-full px-2 py-0.5 text-[10px] font-extrabold ${cycle === "yearly" ? "bg-white/25 text-white" : "bg-amber-100 text-amber-800"}`}>
+                  {t(L, "billYearlySave")}
+                </span>
+              </button>
+            </div>
+
+            {cycle === "monthly" && (
+              <Field label={t(L, "billMonths")} id="bm">
+                <select id="bm" value={months} onChange={(e) => setMonths(e.target.value)}
+                  className="h-11 w-full rounded-[10px] border border-line bg-surface px-2 text-sm">
+                  {[1, 3, 6, 12].map((m) => <option key={m} value={m}>{m} {t(L, "monthU")}</option>)}
+                </select>
+              </Field>
+            )}
+
+            <div className="flex flex-col gap-1 rounded-[10px] border border-line bg-surface px-3 py-2 text-sm">
+              <div className="flex items-baseline justify-between">
+                <span className="text-muted">{t(L, "billTotalPay")}</span>
+                <span className="tnum text-xl font-extrabold text-growth-deep">{fmtDzd(cycle === "yearly" ? yearlyTotal : monthlyTotal)}</span>
+              </div>
+              <div className="flex items-baseline justify-between text-xs">
+                <span className="text-muted">{cycle === "yearly" ? t(L, "billBilledOnce") : `${t(L, "billPerMonth")} · ${monthlyPrice} × ${Math.max(1, Number(months) || 1)}`}</span>
+                {cycle === "yearly" && <span className="tnum font-bold text-amber-700">−{fmtDzd(yearlySavings)}</span>}
+              </div>
+            </div>
+
+            <Field label={t(L, "billEmail")} id="be">
+              <Input id="be" type="email" value={email} onChange={(e) => setEmail(e.target.value)} dir="ltr" />
             </Field>
-            <Field label={t(L, "billMonths")} id="bm">
-              <select id="bm" value={months} onChange={(e) => setMonths(e.target.value)} className="h-11 rounded-[10px] border border-line bg-surface px-2 text-sm">
-                {[1, 3, 6, 12].map((m) => <option key={m} value={m}>{m} {t(L, "monthU")}</option>)}
-              </select>
-            </Field>
-            <Field label={t(L, "billEmail")} id="be"><Input id="be" type="email" value={email} onChange={(e) => setEmail(e.target.value)} dir="ltr" /></Field>
+
+            <Button size="sm" loading={busy} onClick={pay} className="w-full sm:w-fit">
+              {t(L, "billPayBtn")} · <span className="tnum">{fmtDzd(cycle === "yearly" ? yearlyTotal : monthlyTotal)}</span>
+            </Button>
           </div>
-          <Button size="sm" loading={busy} onClick={pay} className="w-fit">{t(L, "billPayBtn")}</Button>
         </>
       )}
       <div className="grid grid-cols-[1fr_auto] items-end gap-2 border-t border-line pt-2">
