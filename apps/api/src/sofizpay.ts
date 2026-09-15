@@ -42,10 +42,11 @@ export interface SofizCreateResult {
 export function parseCreateResponse(json: unknown): SofizCreateResult {
   const r = json as Record<string, unknown>;
   if (r && r.success === true && typeof r.payment_url === "string") {
+    const cibId = r.cib_transaction_id;
     return {
       ok: true,
       transactionId: typeof r.transaction_id === "string" ? r.transaction_id : undefined,
-      cibTransactionId: typeof r.cib_transaction_id === "string" ? r.cib_transaction_id : undefined,
+      cibTransactionId: typeof cibId === "string" ? cibId : typeof cibId === "number" ? String(cibId) : undefined,
       paymentUrl: r.payment_url as string,
       raw: json,
     };
