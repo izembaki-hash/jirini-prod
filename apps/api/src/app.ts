@@ -754,6 +754,7 @@ export async function buildApp(db?: DbPort) {
         returnUrl, memo: ref,
       });
       if (!created.ok || !created.paymentUrl || !created.cibTransactionId) {
+        console.error("[sofizpay] create failed:", JSON.stringify(created.raw ?? created));
         await dbx.setBillingPayment(t, payment.id, { status: "failed" });
         res.status(502).json({ error: "provider_error", detail: created.error ?? "rejected" });
         return;
