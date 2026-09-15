@@ -100,6 +100,7 @@ export async function buildApp(db?: DbPort) {
   // "*" كنص تعني الكل — أما ["*"] كمصفوفة فلا تطابق أي origin (كانت تكسر المتصفح!)
   const corsOrigin = process.env.CORS_ORIGIN ?? "*";
   app.use(cors({ origin: corsOrigin.trim() === "*" ? "*" : corsOrigin.split(",").map((s) => s.trim()) }));
+  app.set("trust proxy", 1);
   app.use(express.json({ limit: "2mb" }));
 
   const loginLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
