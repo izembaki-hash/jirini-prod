@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { fmtDzd, useStore, displayName } from "../store";
-import { ApiError, api, currentBranch } from "../api";
+import { PencilSimple, X } from "@phosphor-icons/react";
+import { fmtDzd, useStore, displayName, type Product } from "../store";
+import { ApiError, api, currentBranch, type ApiProduct } from "../api";
 import { connected } from "../auth";
 import { t } from "../i18n";
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Empty, Field, Input, Segmented } from "../ui";
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Empty, Field, Input, Segmented, cn } from "../ui";
 
 // 3. المخزون: منتجات + وصفات (مطاعم) + مورّدون + مشتريات/ديون + هدر + تنبيهات.
 type Tab = "products" | "recipes" | "suppliers" | "purchases";
@@ -87,6 +88,124 @@ function AlertsStrip() {
 export const daysLeft = (iso: string) =>
   Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
 
+// تحويل منتج الخادم للشكل المحلي (يُستخدم في التحديث والتعديل).
+const toLocalProduct = (sp: ApiProduct) => ({
+  id: sp.id, name: sp.name, nameFr: sp.nameFr ?? sp.name,
+  buy: sp.buyPrice, sell: sp.sellPrice, qty: sp.qty, min: sp.minQty,
+  barcode: sp.barcode ?? undefined, cat: sp.category ?? "عام", active: sp.active,
+  saleable: sp.saleable ?? true, shelf: sp.shelf ?? undefined,
+  expiry: sp.expiryDate ? String(sp.expiryDate).slice(0, 10) : undefined,
+  wholesale: sp.wholesalePrice ?? undefined,
+});
+
+// ─── حوار تعديل صنف: ورقة سفلية في الهاتف، بطاقة متمركزة في المكتب ───
+function ProductEditDialog({ p, cats, isResto, onClose, onSave }: {
+  p: Product; cats: string[]; isResto: boolean; onClose: () => void;
+  onSave: (patch: {
+    name: string; sell: number; buy: number; min: number; barcode?: string; cat: string;
+    saleable: boolean; active: boolean; shelf?: string; expiry?: string; wholesale?: number;
+  }) => Promise<boolean>;
+}) {
+  const { s } = useStore();
+  const L = s.lang;
+  const [name, setName] = useState(p.name);
+  const [sell, setSell] = useState(String(p.sell));
+  const [buy, setBuy] = useState(String(p.buy));
+  const [min, setMin] = useState(String(p.min));
+  const [barcode, setBarcode] = useState(p.barcode ?? "");
+  const [cat, setCat] = useState(p.cat);
+  const [saleable, setSaleable] = useState(p.saleable !== false);
+  const [active, setActive] = useState(p.active);
+  const [shelf, setShelf] = useState(p.shelf ?? "");
+  const [expiry, setExpiry] = useState(p.expiry ?? "");
+  const [wholesale, setWholesale] = useState(p.wholesale != null ? String(p.wholesale) : "");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErr("");
+    if (!name.trim()) { setErr(t(L, "errName")); return; }
+    setBusy(true);
+    const ok = await onSave({
+      name: name.trim(), sell: Number(sell) || 0, buy: Number(buy) || 0,
+      min: Math.max(0, Number(min) || 0), barcode: barcode.trim() || undefined,
+      cat: cat.trim() || "عام", saleable, active,
+      shelf: !isResto && shelf.trim() ? shelf.trim() : undefined,
+      expiry: !isResto && expiry ? expiry : undefined,
+      wholesale: !isResto && wholesale ? Number(wholesale) || 0 : undefined,
+    });
+    setBusy(false);
+    if (ok) onClose();
+  };
+
+  return (
+    <div className="dialog-scrim fixed inset-0 z-50 flex items-end justify-center bg-ink/40 sm:items-center sm:p-4"
+      onClick={onClose} role="dialog" aria-modal="true" aria-label={`${t(L, "editProd")} — ${p.name}`}>
+      <Card className="pop-in w-full max-w-[480px] rounded-b-none rounded-t-3xl sm:rounded-3xl">
+        <div onClick={(e) => e.stopPropagation()}>
+          <form onSubmit={submit} noValidate
+            className="flex max-h-[92dvh] flex-col gap-3 overflow-y-auto p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+            <div className="flex items-center gap-2">
+              <h2 className="flex-1 text-lg font-bold">{t(L, "editProd")}</h2>
+              <button type="button" onClick={onClose} aria-label={t(L, "close")}
+                className="btn-press grid size-11 shrink-0 touch-manipulation place-items-center rounded-[10px] border border-line">
+                <X size={20} aria-hidden />
+              </button>
+            </div>
+            <Field label={t(L, "pName")} id="ep-name">
+              <Input id="ep-name" value={name} onChange={(e) => setName(e.target.value)} autoFocus autoComplete="off" enterKeyHint="next" />
+            </Field>
+            <div className="grid grid-cols-3 gap-2">
+              <Field label={t(L, "pSell")} id="ep-sell">
+                <Input id="ep-sell" value={sell} onChange={(e) => setSell(e.target.value)} inputMode="numeric" dir="ltr" />
+              </Field>
+              <Field label={t(L, "pBuy")} id="ep-buy">
+                <Input id="ep-buy" value={buy} onChange={(e) => setBuy(e.target.value)} inputMode="numeric" dir="ltr" />
+              </Field>
+              <Field label={t(L, "pMin")} id="ep-min">
+                <Input id="ep-min" value={min} onChange={(e) => setMin(e.target.value)} inputMode="numeric" dir="ltr" />
+              </Field>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field label={t(L, "pBarcode")} id="ep-bc">
+                <Input id="ep-bc" value={barcode} onChange={(e) => setBarcode(e.target.value)} inputMode="numeric" dir="ltr" />
+              </Field>
+              <Field label={t(L, "pCat")} id="ep-cat">
+                <Input id="ep-cat" value={cat} onChange={(e) => setCat(e.target.value)} list="ep-cats" autoComplete="off" enterKeyHint="done" />
+                <datalist id="ep-cats">{cats.map((c) => <option key={c} value={c} />)}</datalist>
+              </Field>
+            </div>
+            {!isResto && (
+              <div className="grid grid-cols-3 gap-2">
+                <Field label={t(L, "shelfLb")} id="ep-sh"><Input id="ep-sh" value={shelf} onChange={(e) => setShelf(e.target.value)} /></Field>
+                <Field label={t(L, "expiryLb")} id="ep-ex"><Input id="ep-ex" type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} /></Field>
+                <Field label={t(L, "wholesaleLb")} id="ep-ws"><Input id="ep-ws" inputMode="numeric" value={wholesale} onChange={(e) => setWholesale(e.target.value)} dir="ltr" /></Field>
+              </div>
+            )}
+            <label className="flex min-h-11 cursor-pointer items-center gap-2.5 text-sm font-medium">
+              <input type="checkbox" checked={saleable} onChange={(e) => setSaleable(e.target.checked)} className="size-5 shrink-0 accent-[var(--color-growth)]" />
+              {t(L, "saleableLb")}
+            </label>
+            <label className={cn("flex min-h-11 cursor-pointer items-center gap-2.5 rounded-[10px] border px-3 text-sm font-bold", active ? "border-growth/40 bg-growth/5 text-growth-deep" : "border-ember/40 bg-ember/5 text-ember")}>
+              <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} className="size-5 shrink-0 accent-[var(--color-growth)]" />
+              {active ? t(L, "activeLb") : t(L, "deactivate")}
+            </label>
+            {err && <p role="alert" className="pop-in rounded-[10px] bg-ember/10 px-3 py-2.5 text-sm font-bold text-ember">{err}</p>}
+            <Button type="submit" size="lg" loading={busy}>{t(L, "editProd")}</Button>
+          </form>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 // ─── المنتجات + الهدر ───
 function ProductsTab() {
   const { s, update } = useStore();
@@ -103,7 +222,9 @@ function ProductsTab() {
   const [wPid, setWPid] = useState("");
   const [wQty, setWQty] = useState("");
   const [wWhy, setWWhy] = useState("");
+  const [editing, setEditing] = useState<Product | null>(null);
   const isResto = s.businessType === "restaurant";
+  const cats = useMemo(() => Array.from(new Set(s.products.map((p) => p.cat))), [s.products]);
 
   const refresh = async () => {
     if (!connected()) return;
@@ -148,8 +269,29 @@ function ProductsTab() {
     setShelf(""); setExpiry(""); setWholesale("");
   };
 
-  const bump = async (id: string, d: number) => {
+  // حفظ تعديل صنف: الخادم أولاً عند الاتصال، ثم المحلي — يُعيد false عند الفشل.
+  const saveEdit = async (id: string, patch: {
+    name: string; sell: number; buy: number; min: number; barcode?: string; cat: string;
+    saleable: boolean; active: boolean; shelf?: string; expiry?: string; wholesale?: number;
+  }): Promise<boolean> => {
     if (connected()) {
+      try {
+        const sp = await api.updateProduct(id, {
+          name: patch.name, sellPrice: patch.sell, buyPrice: patch.buy, minQty: patch.min,
+          barcode: patch.barcode || null, category: patch.cat, saleable: patch.saleable, active: patch.active,
+          shelf: patch.shelf || null, expiryDate: patch.expiry || null,
+          wholesalePrice: patch.wholesale ?? null,
+        });
+        update((p) => ({ ...p, products: p.products.map((x) => (x.id === id ? toLocalProduct(sp) : x)) }));
+      } catch (ex) { errToast(L, ex, t(L, "errSaving")); return false; }
+    } else {
+      update((p) => ({ ...p, products: p.products.map((x) => (x.id === id ? { ...x, ...patch } : x)) }));
+    }
+    toast.success(t(L, "prodUpdated"));
+    return true;
+  };
+
+  const bump = async (id: string, d: number) => {    if (connected()) {
       try {
         const p = await api.adjustStock(id, d, "adjust");
         update((prev) => ({ ...prev, products: prev.products.map((x) => x.id === id ? { ...x, qty: p.qty, buy: p.buyPrice, sell: p.sellPrice } : x) }));
@@ -234,7 +376,7 @@ function ProductsTab() {
           {s.products.length === 0 ? <Empty title={t(L, "noProducts")} hint={t(L, "noProductsHint")} /> : (
             <ul className="flex flex-col">
               {s.products.map((p) => (
-                <li key={p.id} className="flex items-center gap-3 border-t border-line py-2.5 first:border-0 first:pt-0">
+                <li key={p.id} className={cn("flex items-center gap-2.5 border-t border-line py-2.5 first:border-0 first:pt-0", !p.active && "opacity-60")}>
                   <span aria-hidden className="grid size-10 shrink-0 place-items-center rounded-xl bg-canvas text-lg font-bold text-muted">{displayName(p, L).slice(0, 1)}</span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-bold">{displayName(p, L)}</span>
@@ -245,13 +387,17 @@ function ProductsTab() {
                       </span>
                     )}
                   </span>
-                  {p.qty <= 0 ? <Badge tone="bad">{t(L, "outOfStock")}</Badge> : p.qty <= p.min ? <Badge tone="warn">{t(L, "low")} <span className="tnum">{p.qty}</span></Badge> : <Badge><span className="tnum">{p.qty}</span></Badge>}
+                  {!p.active ? <Badge tone="neutral">{t(L, "inactiveB")}</Badge>
+                    : p.qty <= 0 ? <Badge tone="bad">{t(L, "outOfStock")}</Badge> : p.qty <= p.min ? <Badge tone="warn">{t(L, "low")} <span className="tnum">{p.qty}</span></Badge> : <Badge><span className="tnum">{p.qty}</span></Badge>}
                   {p.saleable === false ? <Badge>{t(L, "ingredient")}</Badge> : (
                     <span className="tnum w-20 text-end text-sm font-bold">{fmtDzd(p.sell)}</span>
                   )}
                   <span className="flex gap-1">
-                    <button className="grid size-9 place-items-center rounded-lg border border-line font-bold" aria-label={`− ${displayName(p, L)}`} onClick={() => bump(p.id, -1)}>−</button>
-                    <button className="grid size-9 place-items-center rounded-lg border border-line font-bold" aria-label={`+ ${displayName(p, L)}`} onClick={() => bump(p.id, 1)}>+</button>
+                    <button className="btn-press grid size-11 touch-manipulation place-items-center rounded-lg border border-line" aria-label={`${t(L, "editProd")} ${displayName(p, L)}`} onClick={() => setEditing(p)}>
+                      <PencilSimple size={18} aria-hidden />
+                    </button>
+                    <button className="btn-press grid size-11 touch-manipulation place-items-center rounded-lg border border-line text-lg font-bold" aria-label={`− ${displayName(p, L)}`} onClick={() => bump(p.id, -1)}>−</button>
+                    <button className="btn-press grid size-11 touch-manipulation place-items-center rounded-lg border border-line text-lg font-bold" aria-label={`+ ${displayName(p, L)}`} onClick={() => bump(p.id, 1)}>+</button>
                   </span>
                 </li>
               ))}
@@ -259,6 +405,16 @@ function ProductsTab() {
           )}
         </CardContent>
       </Card>
+      {editing && (
+        <ProductEditDialog
+          key={editing.id}
+          p={editing}
+          cats={cats}
+          isResto={isResto}
+          onClose={() => setEditing(null)}
+          onSave={(patch) => saveEdit(editing.id, patch)}
+        />
+      )}
     </div>
   );
 }

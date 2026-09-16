@@ -80,6 +80,8 @@ export const api = {
   listProducts: () => req<ApiProduct[]>("/products"),
   createProduct: (p: Record<string, unknown>) =>
     req<ApiProduct>("/products", { method: "POST", body: JSON.stringify(p) }),
+  updateProduct: (id: string, patch: Record<string, unknown>) =>
+    req<ApiProduct>(`/products/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   adjustStock: (id: string, delta: number, reason: string) =>
     req<ApiProduct>(`/products/${id}/stock`, { method: "POST", body: JSON.stringify({ delta, reason }) }),
   summary: (days = 7) =>
