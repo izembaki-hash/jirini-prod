@@ -1,0 +1,93 @@
+/* طباعة احترافية: #print-root تُعرض وحدها في @media print — الصفحة نفسها لا تُطبع أبداً. */
+#print-root { display: none; }
+
+@media print {
+  #root,
+  [data-sonner-toaster] { display: none !important; }
+
+  #print-root { display: block !important; }
+
+  @page { size: A4; margin: 11mm; }
+
+  .print-doc {
+    font-family: "IBM Plex Sans Arabic", system-ui, "Segoe UI", Tahoma, sans-serif;
+    color: #111;
+    font-size: 11pt;
+    line-height: 1.55;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .print-doc .p-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    border-bottom: 3px double #111;
+    padding-bottom: 10px;
+    margin-bottom: 12px;
+  }
+  .print-doc .p-shop { font-size: 20pt; font-weight: 700; }
+  .print-doc .p-title { font-size: 14pt; font-weight: 700; }
+  .print-doc .p-meta { font-size: 9.5pt; color: #333; }
+  .print-doc .p-meta b { color: #111; }
+
+  .print-doc .p-kpis {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin: 12px 0;
+  }
+  .print-doc .p-kpi {
+    border: 1px solid #999;
+    border-radius: 8px;
+    padding: 8px 10px;
+  }
+  .print-doc .p-kpi span { display: block; font-size: 9pt; color: #444; }
+  .print-doc .p-kpi b { font-size: 13pt; font-variant-numeric: tabular-nums; }
+
+  .print-doc h2.p-sec {
+    font-size: 12pt;
+    margin: 14px 0 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #999;
+  }
+
+  .print-doc table.p-tab { width: 100%; border-collapse: collapse; margin: 6px 0 10px; }
+  .print-doc table.p-tab th,
+  .print-doc table.p-tab td {
+    border: 1px solid #999;
+    padding: 5px 8px;
+    font-size: 10.5pt;
+    vertical-align: top;
+  }
+  .print-doc table.p-tab thead th { background: #eee; font-weight: 700; }
+  .print-doc table.p-tab td.n,
+  .print-doc table.p-tab th.n { text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .print-doc table.p-tab tr.total td { font-weight: 700; font-size: 12.5pt; background: #f4f4f4; }
+  .print-doc table.p-tab tr.neg td { color: #444; }
+
+  .print-doc .p-foot {
+    margin-top: 14px;
+    border-top: 1px solid #999;
+    padding-top: 8px;
+    font-size: 9.5pt;
+    color: #333;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  /* ملصق طاولة: بطاقة واحدة وسط الصفحة */
+  .print-doc .p-sticker {
+    border: 2px solid #111;
+    border-radius: 14px;
+    padding: 22px;
+    text-align: center;
+    max-width: 130mm;
+    margin: 0 auto;
+  }
+  .print-doc .p-sticker .p-table-no { font-size: 42pt; font-weight: 700; line-height: 1.2; }
+  .print-doc .p-sticker svg { width: 62mm; height: 62mm; }
+  .print-doc .p-sticker .p-url { font-size: 9pt; color: #333; word-break: break-all; }
+}

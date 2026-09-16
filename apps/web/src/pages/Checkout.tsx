@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useStore } from "../store";
 import { ApiError, api } from "../api";
 import { t } from "../i18n";
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, cn } from "../ui";
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Steps, cn } from "../ui";
 
 // صفحة الدفع بعد إدخال معلومات النشاط — خطة + دورة + تحويل لـSofizPay.
 const PLANS = [
@@ -83,20 +83,21 @@ export default function Checkout() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[1100px] px-4 py-8">
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-[1fr_1.2fr]">
+    <div className="mx-auto w-full max-w-[1100px] px-4 py-6 sm:py-8">
+      <Steps current={1} steps={[t(L, "stInfo"), t(L, "stPay"), t(L, "stPwd")]} />
+      <div className="mt-5 grid grid-cols-1 gap-6 md:grid-cols-[1fr_1.2fr]">
         {/* عمود الخطط */}
         <div className="flex flex-col gap-3">
           <p className="text-xs font-bold text-growth-deep">{t(L, "activityIs")} {t(L, type)} · {businessName}</p>
           <h1 className="text-2xl font-bold md:text-3xl">{t(L, "cpChoosePlan")}</h1>
-          <div className="grid grid-cols-1 gap-3">
+          <div className="grid grid-cols-1 gap-3" role="radiogroup" aria-label={t(L, "cpChoosePlan")}>
             {PLANS.map((p) => {
               const active = plan === p.id;
               return (
                 <button key={p.id} type="button" onClick={() => setPlan(p.id)}
-                  aria-pressed={active}
-                  className={cn("relative rounded-2xl border p-4 text-start transition",
-                    active ? "border-growth bg-growth/5 ring-1 ring-growth" : "border-line bg-surface hover:border-line-strong")}>
+                  role="radio" aria-checked={active}
+                  className={cn("btn-press relative touch-manipulation rounded-2xl border p-4 text-start transition-[border-color,background-color,box-shadow,transform] duration-150",
+                    active ? "border-growth bg-growth/5 shadow-[0_0_0_1px_var(--color-growth)]" : "border-line bg-surface hover:border-line-strong")}>
                   {p.hot && <Badge tone="ok">{t(L, "mostPicked")}</Badge>}
                   <div className="flex items-baseline justify-between">
                     <span className="text-base font-bold">{L === "ar" ? (p.id === "starter" ? "ستارتر" : p.id === "pro" ? "برو" : "ميغا") : p.id}</span>
@@ -166,12 +167,14 @@ export default function Checkout() {
               <span className="text-xs text-muted">{t(L, "cpEmailHint")}</span>
             </div>
 
-            {err && <p role="alert" className="rounded-[10px] bg-ember/10 px-3 py-2.5 text-sm font-bold text-ember">{err}</p>}
+            {err && <p role="alert" className="pop-in rounded-[10px] bg-ember/10 px-3 py-2.5 text-sm font-bold text-ember">{err}</p>}
 
-            <Button size="lg" loading={busy} onClick={pay} className="w-full">
-              {t(L, "cpPayBtn")} · <span className="tnum ms-1">{amount.toLocaleString("fr-DZ")} {L === "ar" ? "دج" : "DA"}</span>
-            </Button>
-            <p className="text-center text-xs text-muted">{t(L, "cpSecure")}</p>
+            <div className="sticky bottom-0 -mx-1 bg-surface/95 py-2 backdrop-blur sm:static sm:bg-transparent sm:p-0 sm:backdrop-none">
+              <Button size="lg" loading={busy} onClick={pay} className="w-full">
+                {t(L, "cpPayBtn")} · <span className="tnum ms-1">{amount.toLocaleString("fr-DZ")} {L === "ar" ? "دج" : "DA"}</span>
+              </Button>
+            </div>
+            <p className="-mt-2 text-center text-xs text-muted">{t(L, "cpSecure")}</p>
 
             <div className="rounded-[10px] border border-line bg-canvas px-3 py-2 text-xs text-muted">
               <p className="font-bold text-ink">{t(L, "cpSummary")}</p>

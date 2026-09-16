@@ -1,11 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { Plus, X } from "@phosphor-icons/react";
 import { fmtDzd, useStore, displayName, catName } from "../store";
 import { ApiError, api, currentBranch } from "../api";
 import { connected } from "../auth";
 import { t } from "../i18n";
 import { Badge, Button, Card, Empty, Field, Input, Segmented } from "../ui";
 import { Receipt } from "../components/Receipt";
+import { InvoiceDoc, printDoc } from "../print";
 import { btSupported, btSavedName, btPrintReceipt, btErrorMessage } from "../lib/btprinter";
 import type { Order } from "../store";
 
@@ -54,6 +56,27 @@ export default function Pos() {
   const [cat, setCat] = useState<string>("all");
   // وضع الجملة (محل فقط): الأصناف الجديدة تُضاف بسعر الجملة حيث وُجد
   const [wholesale, setWholesale] = useState(false);
+  // إضافة سريعة لصنف/طبق جديد من نقطة البيع نفسها
+  const [qaOpen, setQaOpen] = useState(false);
+  const [qaName, setQaName] = useState("");
+  const [qaSell, setQaSell] = useState("");
+  const [qaBuy, setQaBuy] = useState("");
+  const [qaQty, setQaQty] = useState("50");
+  const [qaCat, setQaCat] = useState("");
+  const [qaBusy, setQaBusy] = useState(false);
+  const [qaErr, setQaErr] = useState("");
+  // تركيز البحث تلقائياً على الشاشات الكبيرة فقط — في الهاتف يفتح الكيبورد ويحجب المنتجات
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (window.matchMedia?.("(pointer: fine)").matches) searchRef.current?.focus();
+  }, []);
+  // Escape يغلق نافذة الإضافة السريعة
+  useEffect(() => {
+    if (!qaOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setQaOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [qaOpen]);
   const unitPrice = (p: { sell: number; wholesale?: number }) =>
     wholesale && s.businessType !== "restaurant" && p.wholesale ? p.wholesale : p.sell;
 
@@ -76,6 +99,7 @@ export default function Pos() {
   };
 
   const lines = Object.entries(cart).map(([id, qty]) => ({ ...s.products.find((p) => p.id === id)!, qty })).filter((x) => x.id);
+  const cartCount = lines.reduce((x, l) => x + l.qty, 0);
   const priceOf = (l: { id: string; sell: number; wholesale?: number }) => {
     const p = s.products.find((x) => x.id === l.id);
     return p ? unitPrice(p) : l.sell;
@@ -85,6 +109,62 @@ export default function Pos() {
   const last = s.orders.find((o) => o.id === lastId) ?? null;
 
   const add = (id: string) => setCart((c) => ({ ...c, [id]: (c[id] ?? 0) + 1 }));
+
+  // فتح الإضافة السريعة: الصنف الافتراضي = المحدد حالياً في الشبكة
+  const openQa = () => {
+    setQaCat(cat === "all" ? "" : cat);
+    setQaErr("");
+    setQaOpen(true);
+  };
+
+  // حفظ الصنف الجديد (خادم أو محلي) ثم إدخاله في السلة مباشرة
+  const quickAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setQaErr("");
+    const sell = Number(qaSell) || 0;
+    if (!qaName.trim() || sell <= 0) { setQaErr(t(L, "qaNeed")); return; }
+    const category = qaCat.trim() || (cat !== "all" ? cat : "عام");
+    const row = {
+      name: qaName.trim(), nameFr: qaName.trim(),
+      branchId: currentBranch() ?? "",
+      buyPrice: Number(qaBuy) || 0, sellPrice: sell,
+      qty: Math.max(0, Number(qaQty) || 0),
+      minQty: 5, category, active: true, saleable: true,
+    };
+    setQaBusy(true);
+    try {
+      let id: string;
+      if (connected()) {
+        if (!row.branchId) { toast.error(t(L, "errSaving")); setQaBusy(false); return; }
+        const created = await api.createProduct({ ...row });
+        id = created.id;
+        update((p) => ({
+          ...p,
+          products: [...p.products, {
+            id: created.id, name: created.name, nameFr: created.nameFr ?? created.name,
+            buy: created.buyPrice, sell: created.sellPrice, qty: created.qty, min: created.minQty,
+            barcode: created.barcode ?? undefined, cat: created.category ?? category,
+            active: created.active, saleable: created.saleable ?? true,
+          }],
+        }));
+      } else {
+        id = `p${Date.now()}`;
+        update((p) => ({
+          ...p,
+          products: [...p.products, {
+            id, name: row.name, nameFr: row.name, buy: row.buyPrice, sell: row.sellPrice,
+            qty: row.qty, min: 5, cat: category, active: true, saleable: true,
+          }],
+        }));
+      }
+      setCart((c) => ({ ...c, [id]: (c[id] ?? 0) + 1 }));
+      toast.success(t(L, "qaAdded"));
+      setQaName(""); setQaSell(""); setQaBuy(""); setQaQty("50"); setQaCat("");
+      setQaOpen(false);
+    } catch (ex) {
+      setQaErr(ex instanceof ApiError ? `${t(L, "errSaving")} (${ex.code})` : t(L, "eConn"));
+    } finally { setQaBusy(false); }
+  };
 
   const charge = async () => {
     if (lines.length === 0) return;
@@ -165,21 +245,27 @@ export default function Pos() {
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.6fr_1fr]">
       <section className="flex flex-col gap-3" aria-label={t(L, "pos")}>
-        <Input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onSearchKey}
-          placeholder={t(L, "search")} aria-label={t(L, "search")} inputMode="search" autoFocus />
-        <div className="flex gap-1.5 overflow-x-auto pb-0.5" role="group" aria-label="التصنيفات">
+        <Input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onSearchKey}
+          placeholder={t(L, "search")} aria-label={t(L, "search")} inputMode="search" enterKeyHint="search" />
+        <div className="flex items-stretch gap-2">
+          <button type="button" onClick={openQa} title={t(L, "addProduct")} aria-label={t(L, "addProduct")}
+            className="btn-press grid size-11 shrink-0 touch-manipulation place-items-center self-center rounded-full border border-dashed border-line-strong text-growth-deep transition-colors hover:border-growth hover:bg-growth/5">
+            <Plus size={20} weight="bold" aria-hidden />
+          </button>
+          <div className="snap-row -mx-4 flex min-w-0 flex-1 gap-1.5 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0" role="group" aria-label="التصنيفات">
           {s.businessType !== "restaurant" && (
             <button onClick={() => setWholesale(!wholesale)} aria-pressed={wholesale}
-              className={`h-9 shrink-0 whitespace-nowrap rounded-full border px-3.5 text-[13px] font-bold transition-colors ${wholesale ? "border-growth bg-growth text-white" : "border-dashed border-line text-muted"}`}>
+              className={`btn-press min-h-10 shrink-0 whitespace-nowrap rounded-full border px-3.5 text-[13px] font-bold transition-colors ${wholesale ? "border-growth bg-growth text-white" : "border-dashed border-line text-muted"}`}>
               {t(L, "wholesaleTicket")}
             </button>
           )}
-          {cats.map((c) => (
-            <button key={c} onClick={() => setCat(c)} aria-pressed={cat === c}
-              className={`h-9 shrink-0 whitespace-nowrap rounded-full border px-3.5 text-[13px] font-bold transition-colors ${cat === c ? "border-growth bg-growth text-white" : "border-line bg-surface text-muted hover:text-ink"}`}>
-              {c === "all" ? t(L, "posAll") : catName(c, L)}
-            </button>
-          ))}
+            {cats.map((c) => (
+              <button key={c} onClick={() => setCat(c)} aria-pressed={cat === c}
+                className={`btn-press min-h-10 shrink-0 whitespace-nowrap rounded-full border px-3.5 text-[13px] font-bold transition-colors ${cat === c ? "border-growth bg-growth text-white" : "border-line bg-surface text-muted hover:text-ink"}`}>
+                {c === "all" ? t(L, "posAll") : catName(c, L)}
+              </button>
+            ))}
+          </div>
         </div>
         {s.businessType === "restaurant" && (
           <div className="flex flex-col gap-2">
@@ -192,7 +278,7 @@ export default function Pos() {
             <div className="flex flex-wrap gap-1.5" role="group" aria-label={t(L, "tableN")}>
               {Array.from({ length: s.tables }, (_, i) => String(i + 1)).map((tb) => (
                 <button key={tb} onClick={() => setTable(tb)} aria-pressed={table === tb}
-                  className={`h-9 min-w-11 rounded-lg border px-2.5 text-sm font-bold ${table === tb ? "border-growth bg-growth text-white" : "border-line"}`}>
+                  className={`btn-press min-h-11 min-w-11 touch-manipulation rounded-lg border px-2.5 text-sm font-bold transition-colors ${table === tb ? "border-growth bg-growth text-white" : "border-line bg-surface"}`}>
                   {tb}
                 </button>
               ))}
@@ -204,7 +290,7 @@ export default function Pos() {
             {list.map((p) => (
               <li key={p.id}>
                 <button onClick={() => add(p.id)} disabled={p.qty <= 0}
-                  className="btn-press flex min-h-[96px] w-full flex-col items-start justify-between gap-1.5 rounded-2xl border border-line bg-surface p-3 text-start transition-colors hover:border-growth disabled:opacity-50"
+                  className="btn-press flex min-h-[104px] w-full touch-manipulation flex-col items-start justify-between gap-1.5 rounded-2xl border border-line bg-surface p-3 text-start transition-colors hover:border-growth active:border-growth disabled:opacity-50"
                   aria-label={`${t(L, "addVerb")} ${displayName(p, L)} — ${fmtDzd(unitPrice(p))}`}>
                   <span className="text-sm font-bold leading-snug">{displayName(p, L)}</span>
                   <span className="flex w-full items-center justify-between gap-2">
@@ -224,10 +310,10 @@ export default function Pos() {
         )}
       </section>
 
-      <aside className="flex flex-col gap-3 lg:sticky lg:top-20 lg:self-start" aria-label={t(L, "cart")}>
+      <aside id="cart" className="flex scroll-mt-20 flex-col gap-3 lg:sticky lg:top-20 lg:self-start" aria-label={t(L, "cart")}>
         <Card>
           <div className="flex flex-col gap-2 p-5">
-            <h2 className="font-bold">{t(L, "cart")} ({lines.reduce((x, l) => x + l.qty, 0)})</h2>
+            <h2 className="font-bold">{t(L, "cart")} <span className="tnum">({cartCount})</span></h2>
             {lines.length === 0 ? <p className="text-sm text-muted">{t(L, "cartEmpty")}</p> : (
               <ul className="flex flex-col gap-1.5">
                 {lines.map((l) => {
@@ -236,10 +322,10 @@ export default function Pos() {
                   return (
                     <li key={l.id} className="flex items-center gap-2 text-sm">
                       <span className="flex-1 font-medium">{lname}</span>
-                      <span className="flex items-center gap-1">
-                        <button className="grid size-9 place-items-center rounded-lg border border-line font-bold" onClick={() => setCart((c) => ({ ...c, [l.id]: Math.max(0, (c[l.id] ?? 0) - 1) }))} aria-label={`${t(L, "dec")} ${lname}`}>−</button>
+                      <span className="flex items-center gap-1.5">
+                        <button className="btn-press grid size-11 touch-manipulation place-items-center rounded-lg border border-line text-lg font-bold" onClick={() => setCart((c) => ({ ...c, [l.id]: Math.max(0, (c[l.id] ?? 0) - 1) }))} aria-label={`${t(L, "dec")} ${lname}`}>−</button>
                         <span className="tnum w-6 text-center font-bold">{l.qty}</span>
-                        <button className="grid size-9 place-items-center rounded-lg border border-line font-bold" onClick={() => add(l.id)} aria-label={`${t(L, "inc")} ${lname}`}>+</button>
+                        <button className="btn-press grid size-11 touch-manipulation place-items-center rounded-lg border border-line text-lg font-bold" onClick={() => add(l.id)} aria-label={`${t(L, "inc")} ${lname}`}>+</button>
                       </span>
                       <span className="tnum w-20 text-end font-bold">{fmtDzd(l.qty * priceOf(l))}</span>
                     </li>
@@ -277,10 +363,81 @@ export default function Pos() {
           <div className="flex flex-col gap-2">
             <Receipt order={last} shop={s.businessName} lang={L} />
             <BtPrint order={last} shop={s.businessName} />
-            <Button variant="outline" onClick={() => window.print()}>{t(L, "print")} / PDF</Button>
+            <Button variant="outline" onClick={() => printDoc(
+              `${t(L, "invTitle")} #${last.num} — ${s.businessName}`,
+              L === "ar" ? "rtl" : "ltr",
+              <InvoiceDoc shop={s.businessName} lang={L} order={last} />,
+            )}>{t(L, "print")} / PDF</Button>
           </div>
         )}
       </aside>
+
+      {/* شريط السلة الثابت للهاتف: المجموع دائماً تحت الإبهام فوق شريط الأقسام */}
+      {cartCount > 0 && (
+        <div className="fixed inset-x-3 z-30 lg:hidden" style={{ bottom: "calc(74px + env(safe-area-inset-bottom))" }}>
+          <button
+            onClick={() => document.getElementById("cart")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            className="btn-press pop-in flex min-h-14 w-full touch-manipulation items-center gap-3 rounded-2xl bg-ink px-4 py-3 text-white shadow-[0_8px_24px_oklch(0.3_0.02_250/0.35)]"
+            aria-label={`${t(L, "cart")} — ${fmtDzd(total)}`}
+          >
+            <span className="tnum grid min-w-8 place-items-center rounded-full bg-growth px-2 py-1 text-sm font-bold text-white">{cartCount}</span>
+            <span className="flex-1 text-start text-sm font-bold">{t(L, "cart")}</span>
+            <span className="tnum text-lg font-bold">{fmtDzd(total)}</span>
+          </button>
+        </div>
+      )}
+      {cartCount > 0 && <div aria-hidden className="h-14 lg:hidden" />}
+
+      {/* إضافة سريعة لصنف/طبق: ورقة سفلية في الهاتف، بطاقة متمركزة في المكتب */}
+      {qaOpen && (
+        <div className="dialog-scrim fixed inset-0 z-50 flex items-end justify-center bg-ink/40 sm:items-center sm:p-4"
+          onClick={() => setQaOpen(false)} role="dialog" aria-modal="true" aria-label={t(L, "qaTitle")}>
+          <Card className="pop-in w-full max-w-[440px] rounded-b-none rounded-t-3xl sm:rounded-3xl">
+            <div onClick={(e) => e.stopPropagation()}>
+              <form onSubmit={quickAdd} noValidate
+                className="flex max-h-[92dvh] flex-col gap-3 overflow-y-auto p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+                <div className="flex items-start gap-2">
+                  <div className="flex-1">
+                    <h2 className="text-lg font-bold">{t(L, "qaTitle")}</h2>
+                    <p className="text-xs text-muted">{t(L, "qaSub")}</p>
+                  </div>
+                  <button type="button" onClick={() => setQaOpen(false)} aria-label={t(L, "close")}
+                    className="btn-press grid size-11 shrink-0 touch-manipulation place-items-center rounded-[10px] border border-line">
+                    <X size={20} aria-hidden />
+                  </button>
+                </div>
+                <Field label={t(L, "pName")} id="qa-name">
+                  <Input id="qa-name" value={qaName} onChange={(e) => setQaName(e.target.value)}
+                    autoFocus autoComplete="off" enterKeyHint="next" placeholder={s.businessType === "restaurant" ? "طاكوس دجاج" : "سكر 1كغ"} />
+                </Field>
+                <div className="grid grid-cols-3 gap-2">
+                  <Field label={t(L, "pSell")} id="qa-sell">
+                    <Input id="qa-sell" value={qaSell} onChange={(e) => setQaSell(e.target.value)}
+                      inputMode="numeric" enterKeyHint="next" dir="ltr" placeholder="350" />
+                  </Field>
+                  <Field label={t(L, "pBuy")} id="qa-buy">
+                    <Input id="qa-buy" value={qaBuy} onChange={(e) => setQaBuy(e.target.value)}
+                      inputMode="numeric" enterKeyHint="next" dir="ltr" placeholder="200" />
+                  </Field>
+                  <Field label={t(L, "pQty")} id="qa-qty">
+                    <Input id="qa-qty" value={qaQty} onChange={(e) => setQaQty(e.target.value)}
+                      inputMode="numeric" enterKeyHint="next" dir="ltr" />
+                  </Field>
+                </div>
+                <Field label={t(L, "pCat")} id="qa-cat">
+                  <Input id="qa-cat" value={qaCat} onChange={(e) => setQaCat(e.target.value)}
+                    list="qa-cats" autoComplete="off" enterKeyHint="done" placeholder={cat !== "all" ? cat : "عام"} />
+                  <datalist id="qa-cats">
+                    {cats.filter((c) => c !== "all").map((c) => <option key={c} value={c} />)}
+                  </datalist>
+                </Field>
+                {qaErr && <p role="alert" className="pop-in rounded-[10px] bg-ember/10 px-3 py-2.5 text-sm font-bold text-ember">{qaErr}</p>}
+                <Button type="submit" size="lg" loading={qaBusy}>{t(L, "add")}</Button>
+              </form>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

@@ -52,12 +52,12 @@ export default function ActivitySelect() {
           <span className="flex gap-1" role="group" aria-label="Language">
             {(["ar", "fr"] as const).map((lg) => (
               <button key={lg} onClick={() => setLang(lg)} aria-pressed={L === lg}
-                className={cn("h-9 rounded-[10px] border px-3 text-xs font-bold", L === lg ? "border-growth bg-growth/10 text-growth-deep" : "border-line")}>
+                className={cn("btn-press min-h-10 touch-manipulation rounded-[10px] border px-3 text-xs font-bold", L === lg ? "border-growth bg-growth/10 text-growth-deep" : "border-line")}>
                 {lg === "ar" ? "عربي" : "FR"}
               </button>
             ))}
           </span>
-          <Link to="/login" className="rounded-[10px] border border-line px-4 py-2.5 text-sm font-bold hover:bg-canvas">
+          <Link to="/login" className="btn-press inline-flex min-h-11 touch-manipulation items-center rounded-[10px] border border-line px-4 text-sm font-bold hover:bg-canvas">
             {t(L, "clientLogin")}
           </Link>
         </span>
@@ -78,7 +78,7 @@ export default function ActivitySelect() {
             key={c.type}
             onClick={() => pick(c.type)}
             style={{ animationDelay: `${i * 90}ms` }}
-            className="rise-in group relative min-h-[46dvh] overflow-hidden rounded-2xl text-start focus-visible:outline-none md:min-h-[52dvh]"
+            className="rise-in group relative min-h-[46dvh] touch-manipulation overflow-hidden rounded-2xl text-start shadow-[inset_0_0_0_1px_oklch(0_0_0/0.12)] transition-transform duration-150 ease-out focus-visible:outline-none active:scale-[0.98] md:min-h-[52dvh]"
             aria-label={`${t(L, "startAs")}${c.title}`}
           >
             <img src={c.img} alt="" loading={i === 0 ? "eager" : "lazy"}

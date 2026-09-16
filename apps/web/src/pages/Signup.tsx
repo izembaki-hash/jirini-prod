@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useStore } from "../store";
 import { ApiError, api } from "../api";
 import { t } from "../i18n";
-import { Button, Card, CardContent, CardHeader, CardTitle, CardDesc, Field, Input } from "../ui";
+import { Button, Card, CardContent, CardHeader, CardTitle, CardDesc, Field, Input, Steps } from "../ui";
 
 // معلومات النشاط — تسبق الدفع. لا كلمة سر هنا (تُضبط بعد الدفع).
 export default function Signup() {
@@ -54,13 +54,14 @@ export default function Signup() {
   };
 
   return (
-    <div className="mx-auto grid w-full max-w-[1000px] gap-6 px-4 py-10 md:grid-cols-[1fr_1.2fr]">
+    <div className="mx-auto grid min-h-[100dvh] w-full max-w-[1000px] content-start gap-6 px-4 py-6 sm:py-10 md:grid-cols-[1fr_1.2fr]">
       <div className="flex flex-col gap-3">
+        <Steps current={0} steps={[t(L, "stInfo"), t(L, "stPay"), t(L, "stPwd")]} />
         <p className="text-xs font-bold text-growth-deep">{t(L, "activityIs")} {t(L, type)}</p>
         <h1 className="text-3xl font-bold md:text-4xl">{t(L, "sTitle")}</h1>
-        <p className="max-w-[45ch] text-sm text-muted">{t(L, "sSub")}</p>
+        <p className="max-w-[45ch] text-sm leading-relaxed text-muted">{t(L, "sSub")}</p>
       </div>
-      <Card><CardHeader><CardTitle>{t(L, "sCard")}</CardTitle><CardDesc>{t(L, "sStep")}</CardDesc></CardHeader>
+      <Card className="rise-in"><CardHeader><CardTitle>{t(L, "sCard")}</CardTitle><CardDesc>{t(L, "sStep")}</CardDesc></CardHeader>
         <CardContent>
           <form onSubmit={submit} className="flex flex-col gap-4" noValidate>
             <Field label={t(L, "fName")} id="biz">
@@ -82,10 +83,10 @@ export default function Signup() {
                 <Input id="addr" value={address} onChange={(e) => setAddress(e.target.value)} autoComplete="street-address" />
               </Field>
             </div>
-            {err && <p role="alert" className="rounded-[10px] bg-ember/10 px-3 py-2.5 text-sm font-bold text-ember">{err}</p>}
-            <div className="flex gap-2">
-              <Button type="submit" loading={busy} className="flex-1">{t(L, "toPay")}</Button>
-              <Button type="button" variant="outline" onClick={() => nav("/")}>{t(L, "back")}</Button>
+            {err && <p role="alert" className="pop-in rounded-[10px] bg-ember/10 px-3 py-2.5 text-sm font-bold text-ember">{err}</p>}
+            <div className="sticky bottom-0 -mx-1 flex gap-2 bg-surface/95 py-2 backdrop-blur sm:static sm:bg-transparent sm:p-0 sm:backdrop-none">
+              <Button type="submit" size="lg" loading={busy} className="flex-1">{t(L, "toPay")}</Button>
+              <Button type="button" size="lg" variant="outline" onClick={() => nav("/")}>{t(L, "back")}</Button>
             </div>
           </form>
         </CardContent>

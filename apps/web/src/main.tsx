@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { API_BASE } from "./api";
 import "./index.css";
+import "./print.css";
 
 // إعلان الأصل للوحدات الباكرة (StoreProvider) قبل تركيب شجرة React.
 (window as unknown as { __API_BASE: string }).__API_BASE = API_BASE;

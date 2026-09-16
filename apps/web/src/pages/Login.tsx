@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { TrendUp, CashRegister, CookingPot } from "@phosphor-icons/react";
 import { ApiError } from "../api";
 import { useAuth } from "../auth";
@@ -57,18 +57,19 @@ export default function Login() {
             </div>
             <form onSubmit={submit} className="flex flex-col gap-4">
               <Field label={t(L, "lSlug")} id="slug" hint={t(L, "lSlugHint")}>
-                <Input id="slug" value={slug} onChange={(e) => setSlug(e.target.value)} autoComplete="username" dir="ltr" />
+                <Input id="slug" value={slug} onChange={(e) => setSlug(e.target.value)} autoComplete="username" enterKeyHint="next" dir="ltr" />
               </Field>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Field label={t(L, "lPhone")} id="lphone">
-                  <Input id="lphone" value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" autoComplete="tel" dir="ltr" />
+                  <Input id="lphone" value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" autoComplete="tel" enterKeyHint="next" dir="ltr" />
                 </Field>
                 <Field label={t(L, "lPass")} id="lpw">
-                  <Input id="lpw" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+                  <Input id="lpw" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" enterKeyHint="go" />
                 </Field>
               </div>
-              {err && <p role="alert" className="rounded-[10px] bg-ember/10 px-3 py-2.5 text-sm font-bold text-ember">{err}</p>}
+              {err && <p role="alert" className="pop-in rounded-[10px] bg-ember/10 px-3 py-2.5 text-sm font-bold text-ember">{err}</p>}
               <Button type="submit" size="lg" loading={busy}>{t(L, "lGo")}</Button>
+              <Link to="/" className="mx-auto w-fit rounded-lg px-2 py-2 text-xs font-bold text-muted underline underline-offset-4">{t(L, "back")}</Link>
             </form>
           </CardContent>
         </Card>

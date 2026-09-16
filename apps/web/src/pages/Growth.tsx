@@ -80,7 +80,7 @@ export default function Growth() {
   const avgProfit = Math.round(
     profitOf(monthOrders.length ? monthOrders : s.orders, s.products)
     - s.overheads.filter((o) => o.active).reduce((x, o) => x + o.monthly, 0)
-    - s.employees.reduce((sum, e) => sum + laborFor(s.att.filter((a) => a.emp === e.id && a.date >= monthCut), [e], s.overtimeOn), 0),
+    - s.employees.reduce((sum, e) => sum + laborFor(s.att.filter((a) => a.emp === e.id && a.date >= monthCut), [e]), 0),
   );
   const g = s.goals[0];
   const pct = g ? Math.min(100, (g.saved / g.target) * 100) : 0;

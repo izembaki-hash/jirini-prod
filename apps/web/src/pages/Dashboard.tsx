@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { fmtDzd, todayKey, useStore, displayName, dailySlice, laborFor } from "../store";
 import { api } from "../api";
@@ -55,6 +55,15 @@ export default function Dashboard() {
     invoices: number; todayNet?: number; todayBreakdown?: import("../api").ProfitBd;
   } | null>(null);
   const [showBd, setShowBd] = useState(false);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  // Escape يغلق نافذة التفصيل ويعيد التركيز لزر الفتح (better-accessibility §3)
+  useEffect(() => {
+    if (!showBd) return;
+    closeRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setShowBd(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showBd]);
   useEffect(() => {
     if (connected()) {
       api.summary(7).then((r) => setRemote({
@@ -77,7 +86,7 @@ export default function Dashboard() {
   const tCogs = tLive.reduce((x, o) => x + o.lines.reduce((s2, l) => s2 + (buyMap[l.productId] ?? 0) * l.qty, 0), 0);
   const ohList = s.overheads.filter((o) => o.active).map((o) => ({ name: o.name, amount: dailySlice(o.monthly) }));
   const tOh = ohList.reduce((x, o) => x + o.amount, 0);
-  const tLabor = laborFor(s.att, s.employees, s.overtimeOn, todayKey());
+  const tLabor = laborFor(s.att, s.employees, todayKey());
   const tNet = Math.round(tSales - tDisc - tCogs - tOh - tLabor);
   const heroNet = remote?.todayNet ?? tNet;
   const bd = remote?.todayBreakdown ?? {
@@ -100,7 +109,7 @@ export default function Dashboard() {
   const expiring = s.products.filter((p) => p.expiry && p.qty > 0 &&
     Math.ceil((new Date(p.expiry).getTime() - Date.now()) / 86_400_000) <= 30);
   const openShift = s.shift && !s.shift.closedAt;
-  const noCheck = s.employees.filter((e) => !s.att.some((a) => a.emp === e.id && a.date === todayKey() && a.outAt === null) && !s.att.some((a) => a.emp === e.id && a.date === todayKey()));
+  const noCheck = s.employees.filter((e) => !s.att.some((a) => a.emp === e.id && a.date === todayKey()));
 
   return (
     <div className="flex flex-col gap-4">
@@ -119,10 +128,10 @@ export default function Dashboard() {
         ]}
       />
       {/* البطل: الفائدة اليومية */}
-      <section aria-labelledby="profit-h" className="card-rise grid grid-cols-1 gap-4 rounded-2xl border border-line bg-surface p-6 md:grid-cols-[1.2fr_1fr]">
+      <section aria-labelledby="profit-h" className="card-rise grid grid-cols-1 gap-4 rounded-2xl border border-line bg-surface p-5 sm:p-6 md:grid-cols-[1.2fr_1fr]">
         <div>
           <p className="text-sm font-semibold text-muted">{t(L, "dailyProfit")}</p>
-          <h1 id="profit-h" className="tnum mt-1 text-5xl font-bold tracking-tight text-growth-deep">{fmtDzd(heroNet)}</h1>
+          <h1 id="profit-h" className="tnum mt-1 text-4xl font-bold tracking-tight text-growth-deep sm:text-5xl">{fmtDzd(heroNet)}</h1>
           <p className="mt-1 text-xs text-muted">{t(L, "netProfitToday")}</p>
           <button onClick={() => setShowBd(true)} className="mt-1 w-fit rounded-lg text-xs font-bold text-growth-deep underline underline-offset-4">
             {t(L, "drillHint")}
@@ -147,9 +156,9 @@ export default function Dashboard() {
       </section>
 
       {showBd && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 p-4" onClick={() => setShowBd(false)}
+        <div className="dialog-scrim fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-ink/40 p-4 pb-[env(safe-area-inset-bottom)]" onClick={() => setShowBd(false)}
           role="dialog" aria-modal="true" aria-label={t(L, "bdTitle")}>
-          <Card className="w-full max-w-[480px]" >
+          <Card className="pop-in w-full max-w-[480px]" >
             <div onClick={(e) => e.stopPropagation()}>
               <CardHeader><CardTitle>{t(L, "bdTitle")}</CardTitle></CardHeader>
               <CardContent className="flex flex-col gap-1.5 text-sm">
@@ -167,7 +176,7 @@ export default function Dashboard() {
                   <b className="tnum text-xl text-growth-deep">{fmtDzd(bd.net)}</b>
                 </div>
                 <p className="tnum text-xs text-muted">{t(L, "bdMargin")}: {bd.marginPct}%</p>
-                <Button onClick={() => setShowBd(false)}>{t(L, "close")}</Button>
+                <Button ref={closeRef} onClick={() => setShowBd(false)}>{t(L, "close")}</Button>
               </CardContent>
             </div>
           </Card>

@@ -58,7 +58,7 @@ export interface ApiOverhead { id: string; name: string; kind: string; monthly: 
 
 export interface ApiEmployee { id: string; name: string; role: string; hourlyRate: number; hiredAt: string; branchId: string }
 export interface ApiShift { id: string; branchId: string; cashierId: string; openedAt: string; closedAt: string | null; openingCash: number; closingCash: number | null; note: string }
-export interface ApiAtt { id: string; employeeId: string; date: string; inAt: string; outAt: string | null; overtimeMin: number }
+export interface ApiAtt { id: string; employeeId: string; date: string; status: "full" | "half" | "absent" }
 export interface ApiCustomer { id: string; name: string; phone: string; address: string | null; balance: number }
 export interface ApiCustomerPayment { id: string; customerId: string; amount: number; method: string; ref: string | null; date: string }
 export interface ApiGoal { id: string; title: string; target: number; saved: number; monthly: number }
@@ -149,8 +149,8 @@ export const api = {
   shiftClose: (id: string, closingCash: number, note: string) =>
     req<{ shift: ApiShift; expected: number; diff: number }>(`/shifts/${id}/close`, { method: "POST", body: JSON.stringify({ closingCash, note }) }),
   shiftsList: () => req<ApiShift[]>("/shifts"),
-  attIn: (employeeId: string) => req<ApiAtt>("/attendance/in", { method: "POST", body: JSON.stringify({ employeeId }) }),
-  attOut: (id: string) => req<ApiAtt>(`/attendance/${id}/out`, { method: "POST" }),
+  attMark: (employeeId: string, status: "full" | "half" | "absent", date?: string) =>
+    req<ApiAtt>("/attendance/mark", { method: "POST", body: JSON.stringify({ employeeId, status, ...(date ? { date } : {}) }) }),
   attList: (date?: string) => req<ApiAtt[]>(`/attendance${date ? `?date=${date}` : ""}`),
   salaries: () => req<{ employee: ApiEmployee; total: number }[]>("/salaries"),
   customersList: () => req<ApiCustomer[]>("/customers"),

@@ -6,36 +6,38 @@ export const cn = (...xs: Array<string | false | null | undefined>) => xs.filter
 type BtnVariant = "primary" | "outline" | "ghost" | "danger";
 type BtnSize = "sm" | "md" | "lg" | "icon";
 
-export function Button({
-  variant = "primary", size = "md", loading = false, className, children, disabled, ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: BtnVariant; size?: BtnSize; loading?: boolean }) {
-  const v: Record<BtnVariant, string> = {
-    primary: "bg-growth text-white hover:bg-growth-deep",
-    outline: "border border-line bg-surface text-ink hover:bg-canvas",
-    ghost: "text-ink hover:bg-canvas",
-    danger: "bg-ember text-white hover:opacity-90",
-  };
-  const z: Record<BtnSize, string> = {
-    sm: "h-9 px-3 text-sm",
-    md: "h-11 px-5 text-[15px]",
-    lg: "h-12 px-7 text-base",
-    icon: "size-11",
-  };
-  return (
-    <button
-      className={cn(
-        "btn-press inline-flex cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-[10px] font-semibold transition-[transform,background-color,opacity] duration-150 ease-out disabled:pointer-events-none disabled:opacity-50",
-        v[variant], z[size], className,
-      )}
-      disabled={disabled || loading}
-      aria-busy={loading || undefined}
-      {...props}
-    >
-      {loading && <span aria-hidden className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent opacity-60" />}
-      {children}
-    </button>
-  );
-}
+export const Button = React.forwardRef<HTMLButtonElement,
+  React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: BtnVariant; size?: BtnSize; loading?: boolean }>(
+  function Button({ variant = "primary", size = "md", loading = false, className, children, disabled, ...props }, ref) {
+    const v: Record<BtnVariant, string> = {
+      primary: "bg-growth text-white hover:bg-growth-deep",
+      outline: "border border-line bg-surface text-ink hover:bg-canvas",
+      ghost: "text-ink hover:bg-canvas",
+      danger: "bg-ember text-white hover:opacity-90",
+    };
+    const z: Record<BtnSize, string> = {
+      sm: "min-h-10 px-3.5 text-sm",
+      md: "min-h-11 px-5 text-[15px]",
+      lg: "min-h-12 px-7 text-base",
+      icon: "size-11",
+    };
+    return (
+      <button
+        ref={ref}
+        className={cn(
+          "btn-press inline-flex cursor-pointer touch-manipulation select-none items-center justify-center gap-2 whitespace-nowrap rounded-[10px] font-semibold transition-[transform,background-color,opacity,box-shadow] duration-150 ease-out disabled:pointer-events-none disabled:opacity-50",
+          v[variant], z[size], className,
+        )}
+        disabled={disabled || loading}
+        aria-busy={loading || undefined}
+        {...props}
+      >
+        {loading && <span aria-hidden className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent opacity-60" />}
+        {children}
+      </button>
+    );
+  },
+);
 
 // تحكم مجزّأ: بديل موحد لكل أزرار الاختيار الثنائية/الثلاثية (الدفع، النوع، الفترة).
 export function Segmented<T extends string>({ label, options, value, onChange }: {
@@ -49,11 +51,12 @@ export function Segmented<T extends string>({ label, options, value, onChange }:
       {options.map((o) => (
         <button
           key={o.value}
+          type="button"
           role="radio"
           aria-checked={value === o.value}
           onClick={() => onChange(o.value)}
           className={cn(
-            "h-9 flex-1 whitespace-nowrap rounded-lg px-3 text-sm font-bold transition-colors duration-150",
+            "btn-press min-h-10 flex-1 touch-manipulation whitespace-nowrap rounded-lg px-3 text-sm font-bold transition-colors duration-150",
             value === o.value ? "bg-surface text-growth-deep shadow-sm" : "text-muted hover:text-ink",
           )}
         >
@@ -93,18 +96,21 @@ export function CardContent(p: React.HTMLAttributes<HTMLDivElement>) {
   return <div className={cn("p-5", p.className)} {...p} />;
 }
 
-export function Input({ className, ...p }: React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <input
-      className={cn(
-        "flex h-11 w-full rounded-[10px] border border-line bg-surface px-3 text-base text-ink",
-        "placeholder:text-muted focus-visible:outline-none",
-        className,
-      )}
-      {...p}
-    />
-  );
-}
+export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
+  function Input({ className, ...p }, ref) {
+    return (
+      <input
+        ref={ref}
+        className={cn(
+          "flex h-11 w-full rounded-[10px] border border-line bg-surface px-3 text-base text-ink",
+          "placeholder:text-muted/80 focus-visible:outline-none aria-invalid:border-ember aria-invalid:ring-1 aria-invalid:ring-ember/40",
+          className,
+        )}
+        {...p}
+      />
+    );
+  },
+);
 
 export function Label({ className, ...p }: React.LabelHTMLAttributes<HTMLLabelElement>) {
   return <label className={cn("text-sm font-semibold", className)} {...p} />;
@@ -113,12 +119,20 @@ export function Label({ className, ...p }: React.LabelHTMLAttributes<HTMLLabelEl
 export function Field({ label, hint, error, id, children }: {
   label: string; hint?: string; error?: string; id: string; children: React.ReactNode;
 }) {
+  // يربط الخطأ بالحقل لقارئ الشاشة (better-accessibility §7) دون تغيير واجهة الاستدعاء.
+  const describedBy = error ? `${id}-error` : hint ? `${id}-hint` : undefined;
+  const wired = React.isValidElement(children)
+    ? React.cloneElement(children as React.ReactElement<Record<string, unknown>>, {
+        ...(error ? { "aria-invalid": true } : {}),
+        ...(describedBy ? { "aria-describedby": describedBy } : {}),
+      })
+    : children;
   return (
     <div className="flex flex-col gap-2">
       <Label htmlFor={id}>{label}</Label>
-      {children}
-      {hint && !error && <p className="text-xs text-muted">{hint}</p>}
-      {error && <p id={`${id}-error`} role="alert" className="text-xs font-semibold text-ember">{error}</p>}
+      {wired}
+      {hint && !error && <p id={`${id}-hint`} className="text-xs text-muted">{hint}</p>}
+      {error && <p id={`${id}-error`} role="alert" className="pop-in rounded-[10px] bg-ember/10 px-3 py-2.5 text-xs font-bold text-ember">{error}</p>}
     </div>
   );
 }
@@ -134,7 +148,7 @@ export function Badge({ tone = "neutral", className, ...p }: React.HTMLAttribute
     info: "bg-canvas text-ink border-line",
   };
   return (
-    <span className={cn("inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold", tones[tone], className)} {...p} />
+    <span className={cn("inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold", tones[tone], className)} {...p} />
   );
 }
 
@@ -143,7 +157,7 @@ export function Separator({ className }: { className?: string }) {
 }
 
 export function Skeleton({ className }: { className?: string }) {
-  return <div aria-hidden className={cn("animate-pulse rounded-lg bg-line/70", className)} />;
+  return <div aria-hidden className={cn("skeleton-shimmer rounded-lg", className)} />;
 }
 
 export function Progress({ value, className }: { value: number; className?: string }) {
@@ -155,13 +169,38 @@ export function Progress({ value, className }: { value: number; className?: stri
   );
 }
 
-export function Empty({ title, hint, action }: { title: string; hint: string; action?: React.ReactNode }) {
+export function Empty({ title, hint, action, icon }: { title: string; hint: string; action?: React.ReactNode; icon?: React.ReactNode }) {
   return (
-    <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-line px-6 py-10 text-center">
+    <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-line-strong bg-surface px-6 py-10 text-center">
+      {icon && <span aria-hidden className="grid size-12 place-items-center rounded-2xl bg-growth/10 text-xl text-growth-deep">{icon}</span>}
       <p className="font-bold">{title}</p>
-      <p className="max-w-[45ch] text-sm text-muted">{hint}</p>
-      {action}
+      <p className="max-w-[45ch] text-sm leading-relaxed text-muted">{hint}</p>
+      {action && <span className="mt-2">{action}</span>}
     </div>
+  );
+}
+
+// مؤشر خطوات مسار التحويل (معلومات ← دفع ← كلمة السر): نص + نقاط، بلا أرقام مخترعة.
+export function Steps({ current, steps }: { current: number; steps: [string, string, string] }) {
+  return (
+    <ol className="flex items-center gap-1.5" aria-label="steps">
+      {steps.map((s, i) => {
+        const done = i < current;
+        const now = i === current;
+        return (
+          <li key={s} className="flex flex-1 items-center gap-1.5 last:flex-none" aria-current={now ? "step" : undefined}>
+            <span className={cn(
+              "tnum grid size-6 shrink-0 place-items-center rounded-full text-[11px] font-bold",
+              done ? "bg-growth text-white" : now ? "bg-growth/15 text-growth-deep ring-1 ring-growth" : "bg-canvas text-muted ring-1 ring-line",
+            )}>
+              {done ? "✓" : i + 1}
+            </span>
+            <span className={cn("whitespace-nowrap text-xs font-bold", now || done ? "text-ink" : "text-muted")}>{s}</span>
+            {i < steps.length - 1 && <span aria-hidden className={cn("h-px flex-1", i < current ? "bg-growth" : "bg-line")} />}
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 

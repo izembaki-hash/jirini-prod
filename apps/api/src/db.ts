@@ -32,9 +32,10 @@ export interface ShiftRow {
 export interface EmployeeRow {
   id: string; tenantId: string; branchId: string; name: string; role: string; hiredAt: string; hourlyRate: number;
 }
+export type AttendanceStatus = "full" | "half" | "absent";
 export interface AttendanceRow {
   id: string; tenantId: string; employeeId: string; date: string;
-  inAt: string; outAt: string | null; overtimeMin: number;
+  status: AttendanceStatus;
 }
 export interface CustomerRow { id: string; tenantId: string; name: string; phone: string; address: string | null; balance: number }
 export interface CustomerPaymentRow {
@@ -128,9 +129,8 @@ export interface DbPort {
   openShift(s: Omit<ShiftRow, "id" | "closedAt" | "closingCash">): Promise<ShiftRow>;
   closeShift(tenantId: string, id: string, closingCash: number, note: string): Promise<ShiftRow>;
   listShifts(tenantId: string): Promise<ShiftRow[]>;
-  // حضور
-  checkIn(a: Omit<AttendanceRow, "id" | "outAt">): Promise<AttendanceRow>;
-  checkOut(tenantId: string, id: string): Promise<AttendanceRow>;
+  // حضور يومي (upsert لكل موظف/يوم)
+  markAttendance(a: Omit<AttendanceRow, "id">): Promise<AttendanceRow>;
   listAttendance(tenantId: string, date?: string): Promise<AttendanceRow[]>;
   // عملاء وأهداف وفروع
   listCustomers(tenantId: string): Promise<CustomerRow[]>;
@@ -290,12 +290,10 @@ export class MemoryAdapter implements DbPort {
   }
   async listShifts(tenantId: string) { return this.shifts.filter((s) => s.tenantId === tenantId); }
 
-  async checkIn(a: Omit<AttendanceRow, "id" | "outAt">) {
-    const r = { ...a, id: uid("a"), outAt: null }; this.att.unshift(r); return r;
-  }
-  async checkOut(tenantId: string, id: string) {
-    const a = this.att.find((x) => x.id === id && x.tenantId === tenantId); if (!a) throw new Error("att");
-    a.outAt = now(); return a;
+  async markAttendance(a: Omit<AttendanceRow, "id">) {
+    const cur = this.att.find((x) => x.tenantId === a.tenantId && x.employeeId === a.employeeId && x.date === a.date);
+    if (cur) { cur.status = a.status; return cur; }
+    const r = { ...a, id: uid("a") }; this.att.unshift(r); return r;
   }
   async listAttendance(tenantId: string, date?: string) {
     return this.att.filter((a) => a.tenantId === tenantId && (!date || a.date === date));
@@ -684,21 +682,20 @@ export class PrismaAdapter implements DbPort {
     }));
   }
 
-  async checkIn(a: Omit<AttendanceRow, "id" | "outAt">) {
-    return PrismaAdapter.row<AttendanceRow>(await this.m("attendance").create({
-      data: { ...a, inAt: new Date(a.inAt) },
-    }));
-  }
-  async checkOut(tenantId: string, id: string) {
-    const cur = await this.m("attendance").findFirst({ where: { id, tenantId } });
-    if (!cur) throw new Error("att");
-    return PrismaAdapter.row<AttendanceRow>(await this.m("attendance").update({
-      where: { id }, data: { outAt: new Date() },
-    }));
+  async markAttendance(a: Omit<AttendanceRow, "id">) {
+    const cur = await this.m("attendance").findFirst({
+      where: { tenantId: a.tenantId, employeeId: a.employeeId, date: a.date },
+    });
+    if (cur) {
+      return PrismaAdapter.row<AttendanceRow>(await this.m("attendance").update({
+        where: { id: (cur as { id: string }).id }, data: { status: a.status },
+      }));
+    }
+    return PrismaAdapter.row<AttendanceRow>(await this.m("attendance").create({ data: { ...a } }));
   }
   async listAttendance(tenantId: string, date?: string) {
     return PrismaAdapter.row<AttendanceRow[]>(await this.m("attendance").findMany({
-      where: { tenantId, ...(date ? { date } : {}) }, orderBy: { inAt: "desc" }, take: 500,
+      where: { tenantId, ...(date ? { date } : {}) }, orderBy: { date: "desc" }, take: 500,
     }));
   }
 

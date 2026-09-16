@@ -20,7 +20,8 @@ export interface Order {
 }
 export interface Shift { id: string; by: string; openedAt: string; closedAt: string | null; opening: number; closing: number | null; note: string }
 export interface Employee { id: string; name: string; role: Role; rate: number; hired: string }
-export interface Att { id: string; emp: string; date: string; inAt: string; outAt: string | null; ot: number }
+export type AttStatus = "full" | "half" | "absent";
+export interface Att { id: string; emp: string; date: string; status: AttStatus }
 export interface Customer { id: string; name: string; phone: string; address?: string; balance?: number }
 export interface Goal { id: string; title: string; target: number; saved: number; monthly: number }
 export interface RecipeItem { id: string; dishId: string; ingredientId: string; qty: number }
@@ -34,21 +35,31 @@ export interface Overhead { id: string; name: string; kind: string; monthly: num
 // حصة اليوم من مصروف شهري (÷30) — نفس اتفاقية الخادم.
 export const dailySlice = (monthly: number) => Math.round((monthly / 30) * 100) / 100;
 
-// أجور يوم/فترة من سجلات الحضور (نفس صيغة الخادم).
+// ساعات اليوم الكامل — تطابق الخادم (math.ts): الجزئي = النصف، الغياب = صفر.
+export const FULL_DAY_HOURS = 8;
+
+// أجور يوم/فترة من سجلات الحضور اليومية (نفس صيغة الخادم).
 export function laborFor(
-  att: Att[], employees: Employee[], overtimeOn: boolean, date?: string,
+  att: Att[], employees: Employee[], date?: string,
 ): number {
   let total = 0;
   for (const a of att) {
-    if (!a.outAt) continue;
     if (date && a.date !== date) continue;
     const e = employees.find((x) => x.id === a.emp);
     if (!e) continue;
-    const h = (new Date(a.outAt).getTime() - new Date(a.inAt).getTime()) / 3_600_000;
-    const otH = overtimeOn ? a.ot / 60 : 0;
-    total += Math.max(0, h - otH) * e.rate + otH * e.rate * 1.5;
+    if (a.status === "full") total += FULL_DAY_HOURS * e.rate;
+    else if (a.status === "half") total += (FULL_DAY_HOURS / 2) * e.rate;
   }
   return Math.round(total);
+}
+
+// ملخص حضور موظف في فترة: أيام كاملة/جزئية/غياب + كلفة الأجور.
+export function attSummary(att: Att[], empId: string) {
+  const recs = att.filter((a) => a.emp === empId);
+  const full = recs.filter((a) => a.status === "full").length;
+  const half = recs.filter((a) => a.status === "half").length;
+  const absent = recs.filter((a) => a.status === "absent").length;
+  return { full, half, absent, days: recs.length };
 }
 
 // اسم العرض حسب اللغة: الفرنسية تستخدم nameFr عند توفره.
@@ -71,7 +82,6 @@ interface State {
   lang: Lang;
   role: Role;
   crmOn: boolean;
-  overtimeOn: boolean;
   branch: string;
   branches: string[];
   tables: number;
@@ -154,7 +164,7 @@ function initial(type: BusinessType): State {
     businessType: type,
     businessName: type === "restaurant" ? "مطعم الدار" : "سوبرماركت النور",
     plan: "pro", lang: "ar", role: "owner",
-    crmOn: true, overtimeOn: false,
+    crmOn: true,
     branch: "الفرع الرئيسي", branches: ["الفرع الرئيسي"], tables: 4,
     products, orders: seedOrders(products),
     shift: { id: "sh1", by: "أمين (كاشير)", openedAt: new Date(Date.now() - 4 * 3_600_000).toISOString(), closedAt: null, opening: 10000, closing: null, note: "" },
@@ -163,7 +173,7 @@ function initial(type: BusinessType): State {
       { id: "e1", name: "أمين بن علي", role: "cashier", rate: 300, hired: "2024-03-01" },
       { id: "e2", name: "يوسف حمدي", role: "cook", rate: 350, hired: "2024-06-15" },
     ],
-    att: [{ id: "a1", emp: "e1", date: new Date().toISOString().slice(0, 10), inAt: new Date(Date.now() - 5 * 3_600_000).toISOString(), outAt: null, ot: 0 }],
+    att: [{ id: "a1", emp: "e1", date: new Date().toISOString().slice(0, 10), status: "full" }],
     customers: [{ id: "c1", name: "زبون وفِي", phone: "0550 12 34 56", address: "باب الزوار" }],
     goals: [{ id: "g1", title: "فتح فرع جديد", target: 1500000, saved: 420000, monthly: 120000 }],
     recipes, suppliers, purchases, alerts: [],

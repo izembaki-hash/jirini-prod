@@ -134,12 +134,12 @@ async function main() {
   await db.closeShift(tenant.id, shift.id, 5200, "ok");
   ok("closeShift", (await db.listShifts(tenant.id))[0]?.closingCash === 5200);
 
-  const att = await db.checkIn({
-    tenantId: tenant.id, employeeId: emp.id, date: "2026-09-08",
-    inAt: new Date().toISOString(), overtimeMin: 0,
+  const att = await db.markAttendance({
+    tenantId: tenant.id, employeeId: emp.id, date: "2026-09-08", status: "full",
   });
-  await db.checkOut(tenant.id, att.id);
-  ok("attendance", (await db.listAttendance(tenant.id, "2026-09-08")).length === 1);
+  ok("attendance", att.status === "full" && (await db.listAttendance(tenant.id, "2026-09-08")).length === 1);
+  await db.markAttendance({ tenantId: tenant.id, employeeId: emp.id, date: "2026-09-08", status: "half" });
+  ok("attendance upsert", (await db.listAttendance(tenant.id, "2026-09-08"))[0]?.status === "half");
 
   const cust = await db.createCustomer({ tenantId: tenant.id, name: "C", phone: "0551", address: null });
   ok("customer", (await db.listCustomers(tenant.id)).length === 1 && cust.balance === 0);

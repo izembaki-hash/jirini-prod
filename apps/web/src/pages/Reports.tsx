@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { fmtDzd, profitOf, useStore, displayName, dailySlice, laborFor } from "../store";
+import { fmtDzd, profitOf, useStore, displayName, dailySlice, laborFor, attSummary } from "../store";
 import { t } from "../i18n";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Segmented, Stat } from "../ui";
+import { ReportDoc, printDoc } from "../print";
 import { Bars } from "../components/Charts";
 
 // 8. التقارير: مبيعات/أرباح/منتج/موظف/فرع/حضور + حساب P&L + تصدير (طباعة/PDF وCSV).
@@ -23,7 +24,7 @@ export default function Reports() {
   const ohLines = s.overheads.filter((o) => o.active).map((o) => ({ name: o.name, amount: Math.round(dailySlice(o.monthly) * range * 100) / 100 }));
   const ohTotal = ohLines.reduce((x, o) => x + o.amount, 0);
   const attIn = s.att.filter((a) => a.date >= days[0].key);
-  const labor = s.employees.reduce((sum, e) => sum + laborFor(attIn.filter((a) => a.emp === e.id), [e], s.overtimeOn), 0);
+  const labor = s.employees.reduce((sum, e) => sum + laborFor(attIn.filter((a) => a.emp === e.id), [e]), 0);
   const net = Math.round(sales - discounts - cogs - ohTotal - labor);
   const perDay = days.map((d) => inRange.filter((o) => o.at.slice(0, 10) === d.key).reduce((x, o) => x + o.total, 0));
   const cashSales = live.filter((o) => o.pay === "cash").reduce((x, o) => x + o.total, 0);
@@ -47,8 +48,49 @@ export default function Reports() {
     { k: t(L, "bdLabor"), v: labor },
   ];
 
-  const csv = () => {
-    const rows = [["num", "date", "items", "total", "pay", "status"],
+  const periodLb = `${new Date(`${days[0].key}T12:00:00`).toLocaleDateString(L === "ar" ? "ar-DZ" : "fr-DZ")} — ${new Date(`${days[days.length - 1].key}T12:00:00`).toLocaleDateString(L === "ar" ? "ar-DZ" : "fr-DZ")}`;
+
+  const printReport = () => {
+    const marginPct = sales > 0 ? Math.round((net / sales) * 1000) / 10 : 0;
+    printDoc(
+      `${t(L, "repTitle")} — ${s.businessName}`,
+      L === "ar" ? "rtl" : "ltr",
+      <ReportDoc d={{
+        shop: s.businessName, lang: L, title: t(L, "repTitle"), period: periodLb,
+        kpis: [
+          { label: t(L, "statSales"), value: fmtDzd(sales) },
+          { label: t(L, "statProfit"), value: fmtDzd(profit) },
+          { label: t(L, "bdNet"), value: `${fmtDzd(net)} (${marginPct}%)` },
+          { label: t(L, "statBasket"), value: fmtDzd(live.length ? sales / live.length : 0) },
+        ],
+        pnl: [
+          { label: t(L, "bdSales"), value: fmtDzd(sales) },
+          { label: `− ${t(L, "bdDiscounts")}`, value: `−${fmtDzd(discounts)}`, neg: true },
+          { label: `− ${t(L, "bdCogs")}`, value: `−${fmtDzd(cogs)}`, neg: true },
+          { label: t(L, "bdGross"), value: fmtDzd(sales - discounts - cogs), bold: true },
+          ...ohLines.map((o) => ({ label: `− ${o.name}`, value: `−${fmtDzd(o.amount)}`, neg: true })),
+          { label: `− ${t(L, "bdLabor")}`, value: `−${fmtDzd(labor)}`, neg: true },
+          { label: t(L, "bdNet"), value: fmtDzd(net), bold: true },
+        ],
+        methods: [
+          { label: t(L, "cash"), value: fmtDzd(cashSales) },
+          { label: t(L, "card"), value: fmtDzd(cardSales) },
+          ...(creditSales > 0 ? [{ label: t(L, "credit"), value: fmtDzd(creditSales) }] : []),
+        ],
+        top: ranked.slice(0, 10).map(([n, q]) => {
+          const pm = s.products.find((pp) => pp.name === n);
+          const m = (rev[n] ?? 0) - (cost[n] ?? 0);
+          return { name: pm ? displayName(pm, L) : n, qty: q, margin: `${m >= 0 ? "+" : ""}${fmtDzd(m)}` };
+        }),
+        attendance: s.employees.map((e) => {
+          const sm = attSummary(attIn.filter((a) => a.emp === e.id), e.id);
+          return { name: e.name, full: sm.full, half: sm.half, absent: sm.absent, salary: fmtDzd(laborFor(attIn.filter((a) => a.emp === e.id), [e])) };
+        }),
+      }} />,
+    );
+  };
+
+  const csv = () => {    const rows = [["num", "date", "items", "total", "pay", "status"],
       ...inRange.map((o) => [o.num, o.at.slice(0, 10), o.lines.reduce((x, l) => x + l.qty, 0), o.total, o.pay, o.status])];
     const blob = new Blob([rows.map((r) => r.join(",")).join("\n")], { type: "text/csv" });
     const a = document.createElement("a");
@@ -65,7 +107,7 @@ export default function Reports() {
           <Segmented label={t(L, "period")} value={String(range) as "7" | "30"}
             options={[{ value: "7", label: t(L, "d7") }, { value: "30", label: t(L, "d30") }]}
             onChange={(v) => setRange(Number(v) as 7 | 30)} />
-          <Button variant="outline" onClick={() => window.print()}>{t(L, "pdfPrint")}</Button>
+          <Button variant="outline" onClick={printReport}>{t(L, "pdfPrint")}</Button>
           <Button variant="outline" onClick={csv}>Excel (CSV)</Button>
         </span>
       </div>
@@ -142,18 +184,20 @@ export default function Reports() {
 
       <Card><CardHeader><CardTitle>{t(L, "attReport")}</CardTitle></CardHeader>
         <CardContent>
-          <ul className="flex flex-col gap-1.5 text-sm">
+          <ul className="flex flex-col text-sm">
             {s.employees.map((e) => {
-              const recs = s.att.filter((a) => a.emp === e.id);
-              const late = recs.filter((a) => new Date(a.inAt).getHours() >= 9).length;
+              const sm = attSummary(attIn.filter((a) => a.emp === e.id), e.id);
               return (
-                <li key={e.id} className="flex items-center gap-2 border-t border-line pt-2 first:border-0 first:pt-0">
-                  <span className="flex-1 font-medium">{e.name}</span>
-                  <Badge>{recs.length} {t(L, "attPresent")}</Badge>
-                  <Badge tone={late ? "warn" : undefined}>{late} {t(L, "attLate")}</Badge>
+                <li key={e.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line py-2.5 first:border-0 first:pt-0">
+                  <span className="min-w-28 flex-1 font-bold">{e.name}</span>
+                  <Badge tone="ok"><span className="tnum">{sm.full}</span> {t(L, "attFull")}</Badge>
+                  <Badge tone="warn"><span className="tnum">{sm.half}</span> {t(L, "attHalf")}</Badge>
+                  <Badge tone={sm.absent ? "bad" : "neutral"}><span className="tnum">{sm.absent}</span> {t(L, "attAbsent")}</Badge>
+                  <b className="tnum ms-auto text-growth-deep">{fmtDzd(laborFor(attIn.filter((a) => a.emp === e.id), [e]))}</b>
                 </li>
               );
             })}
+            {s.employees.length === 0 && <li className="text-muted">{t(L, "noEmpHint")}</li>}
           </ul>
         </CardContent>
       </Card>

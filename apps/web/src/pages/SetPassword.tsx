@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { CheckCircle } from "@phosphor-icons/react";
 import { useStore } from "../store";
 import { ApiError, api } from "../api";
 import { t } from "../i18n";
-import { Button, Card, CardContent, CardHeader, CardTitle, Field, Input } from "../ui";
+import { Button, Card, CardContent, CardHeader, CardTitle, Field, Input, Steps } from "../ui";
 
 // ضبط كلمة سر الدخول بعد الدفع الناجح (مستأجر جديد).
 // لا توكن مطلوب — التحقق عبر paymentId في الرابط.
@@ -42,8 +43,9 @@ export default function SetPassword() {
   };
 
   return (
-    <div className="mx-auto grid min-h-[100dvh] w-full max-w-[520px] place-items-center px-4 py-8">
-      <Card className="w-full">
+    <div className="mx-auto grid min-h-[100dvh] w-full max-w-[520px] content-center gap-5 px-4 py-8">
+      <Steps current={2} steps={[t(L, "stInfo"), t(L, "stPay"), t(L, "stPwd")]} />
+      <Card className="rise-in w-full">
         <CardHeader>
           <CardTitle>{t(L, "spTitle")}</CardTitle>
           <p className="text-sm text-muted">{t(L, "spSub")}</p>
@@ -61,9 +63,11 @@ export default function SetPassword() {
               <Button type="submit" size="lg" loading={busy}>{t(L, "spSubmit")}</Button>
             </form>
           ) : (
-            <div className="flex flex-col items-center gap-3 py-2 text-center">
-              <p className="text-3xl" aria-hidden>✅</p>
-              <p className="text-sm">{t(L, "spDone")}</p>
+            <div className="pop-in flex flex-col items-center gap-3 py-2 text-center">
+              <span className="grid size-14 place-items-center rounded-full bg-growth/10">
+                <CheckCircle size={30} weight="fill" aria-hidden className="text-growth-deep" />
+              </span>
+              <p className="text-sm font-semibold">{t(L, "spDone")}</p>
               <Button size="lg" onClick={() => nav("/login")}>{t(L, "spToLogin")}</Button>
             </div>
           )}

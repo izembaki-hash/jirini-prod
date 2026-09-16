@@ -582,20 +582,19 @@ export async function buildApp(db?: DbPort) {
     catch (e) { next(e); }
   });
 
-  // ═══ الحضور والرواتب ═══
-  app.post("/attendance/in", requireAuth, requireRole("owner", "manager", "cashier"), async (req, res, next) => {
+  // ═══ الحضور اليومي والرواتب (دوام كامل/جزئي/غياب) ═══
+  app.post("/attendance/mark", requireAuth, requireRole("owner", "manager", "cashier"), async (req, res, next) => {
     try {
-      const b = z.object({ employeeId: z.string().min(1) }).parse(req.body);
-      const today = algiersDay();
-      res.status(201).json(await dbx.checkIn({
-        tenantId: req.auth!.tenant_id, employeeId: b.employeeId, date: today, inAt: new Date().toISOString(), overtimeMin: 0,
+      const b = z.object({
+        employeeId: z.string().min(1),
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        status: z.enum(["full", "half", "absent"]),
+      }).parse(req.body);
+      res.status(201).json(await dbx.markAttendance({
+        tenantId: req.auth!.tenant_id, employeeId: b.employeeId,
+        date: b.date ?? algiersDay(), status: b.status,
       }));
     } catch (e) { next(e); }
-  });
-
-  app.post("/attendance/:id/out", requireAuth, requireRole("owner", "manager", "cashier"), async (req, res, next) => {
-    try { res.json(await dbx.checkOut(req.auth!.tenant_id, req.params.id)); }
-    catch (e) { next(e); }
   });
 
   app.get("/attendance", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
@@ -606,11 +605,10 @@ export async function buildApp(db?: DbPort) {
   app.get("/salaries", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
     try {
       const t = req.auth!.tenant_id;
-      const tenant = await dbx.getTenant(t);
       const [emps, att] = await Promise.all([dbx.listEmployees(t), dbx.listAttendance(t)]);
       res.json(emps.map((e) => ({
         employee: e,
-        total: salaryFor(att.filter((a) => a.employeeId === e.id), e.hourlyRate, 1.5, tenant?.overtimeEnabled ?? false),
+        total: salaryFor(att.filter((a) => a.employeeId === e.id), e.hourlyRate),
       })));
     } catch (e) { next(e); }
   });
@@ -1067,10 +1065,9 @@ export async function buildApp(db?: DbPort) {
       const t = req.auth!.tenant_id;
       const days = Math.min(90, Math.max(1, Number(req.query.days ?? 7)));
       const since = new Date(Date.now() - days * 86_400_000).toISOString();
-      const [orders, products, tenant, employees, attAll, overheads] = await Promise.all([
+      const [orders, products, employees, attAll, overheads] = await Promise.all([
         dbx.listOrders(t, { branchId: branchOf(req), since }),
         dbx.listProducts(t),
-        dbx.getTenant(t),
         dbx.listEmployees(t),
         dbx.listAttendance(t),
         dbx.listOverheads(t),
@@ -1083,7 +1080,7 @@ export async function buildApp(db?: DbPort) {
       const dailyOh = activeOh.map((o) => ({ name: o.name, amount: dailySlice(o.monthly) }));
       const attIn = attAll.filter((a) => a.date >= since.slice(0, 10));
       const laborOf = (recs: typeof attIn) =>
-        employees.reduce((s, e) => s + salaryFor(recs.filter((a) => a.employeeId === e.id), e.hourlyRate, 1.5, tenant?.overtimeEnabled ?? false), 0);
+        employees.reduce((s, e) => s + salaryFor(recs.filter((a) => a.employeeId === e.id), e.hourlyRate), 0);
       const labor = laborOf(attIn);
       const bd = profitBreakdown(live, buy, dailyOh.map((o) => ({ ...o, amount: o.amount * days })), labor);
       const perDay: { date: string; sales: number; profit: number; net: number }[] = [];

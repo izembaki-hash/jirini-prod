@@ -24,18 +24,17 @@ export function shiftExpected(opening: number, cashSales: number): number {
   return opening + cashSales;
 }
 
+// ساعات اليوم الكامل — الدوام الجزئي = النصف، الغياب = صفر.
+export const FULL_DAY_HOURS = 8;
+
 export function salaryFor(
-  records: { inAt: string; outAt: string | null; overtimeMin: number }[],
+  records: { status: string }[],
   hourlyRate: number,
-  overtimeRate = 1.5,
-  overtimeOn = true,
 ): number {
   let total = 0;
   for (const a of records) {
-    if (!a.outAt) continue;
-    const h = (new Date(a.outAt).getTime() - new Date(a.inAt).getTime()) / 3_600_000;
-    const otH = overtimeOn ? a.overtimeMin / 60 : 0;
-    total += Math.max(0, h - otH) * hourlyRate + otH * hourlyRate * overtimeRate;
+    if (a.status === "full") total += FULL_DAY_HOURS * hourlyRate;
+    else if (a.status === "half") total += (FULL_DAY_HOURS / 2) * hourlyRate;
   }
   return Math.round(total);
 }

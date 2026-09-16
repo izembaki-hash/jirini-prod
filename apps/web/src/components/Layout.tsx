@@ -128,7 +128,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
       {/* المحتوى */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-2 border-b border-line bg-canvas/90 px-4 backdrop-blur print:hidden">
+        <header style={{ paddingTop: "env(safe-area-inset-top)" }} className="sticky top-0 z-30 flex min-h-16 items-center gap-2 border-b border-line bg-canvas/90 px-4 backdrop-blur print:hidden">
           <button onClick={() => nav("/app")} className="flex items-center gap-2 md:hidden" aria-label={s.businessName}>
             <span aria-hidden className="grid size-9 place-items-center rounded-[10px] bg-growth font-bold text-white">د</span>
             <span className="max-w-[40vw] truncate text-sm font-bold">{s.businessName}</span>
@@ -164,22 +164,27 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </main>
       </div>
 
-      {/* شريط سفلي للهاتف: الأقسام الخمسة الأهم بإبهام واحد */}
+      {/* شريط سفلي للهاتف: الأقسام الأهم بإبهام واحد — حبة نشطة + وزن مملوء */}
       <nav aria-label={L === "ar" ? "أقسام" : "Sections"}
         className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur print:hidden md:hidden">
-        <ul className={`mx-auto grid max-w-[560px] ${s.businessType === "restaurant" ? "grid-cols-5" : "grid-cols-4"}`}>
+        <ul className={`mx-auto grid max-w-[560px] px-1 pt-1 ${s.businessType === "restaurant" ? "grid-cols-5" : "grid-cols-4"}`}>
           {LINKS.filter((l) => (MOBILE_TABS as readonly string[]).includes(l.to) && (s.businessType === "restaurant" || l.to !== "/app/kitchen")).map((l) => (
             <li key={l.to}>
               <NavLink
                 to={l.to}
                 end={l.to === "/app"}
                 className={({ isActive }) => cn(
-                  "flex min-h-[60px] flex-col items-center justify-center gap-0.5 text-[11px] font-semibold",
-                  isActive ? "text-growth-deep" : "text-muted",
+                  "flex min-h-[62px] touch-manipulation flex-col items-center justify-center gap-1 rounded-2xl text-[11px] font-bold transition-[background-color,color,transform] duration-150 active:scale-95",
+                  isActive ? "bg-growth/10 text-growth-deep" : "text-muted active:bg-canvas",
                 )}
               >
-                <l.Icon size={22} weight="regular" aria-hidden />
-                {t(L, l.key as never)}
+                {({ isActive }) => (
+                  <>
+                    <l.Icon size={23} weight={isActive ? "fill" : "regular"} aria-hidden />
+                    {t(L, l.key as never)}
+                    <span aria-hidden className={cn("h-1 w-1 rounded-full transition-opacity", isActive ? "bg-growth-deep opacity-100" : "opacity-0")} />
+                  </>
+                )}
               </NavLink>
             </li>
           ))}

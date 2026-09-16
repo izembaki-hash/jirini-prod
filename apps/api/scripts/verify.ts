@@ -363,12 +363,10 @@ async function main() {
   ok("upload image", upRes.status === 201 && !!upJson.url?.startsWith("/uploads/"));
 
   // Ø­Ø¶ÙˆØ± ÙˆØ±ÙˆØ§ØªØ¨
-  r = await call("POST", "/attendance/in", { employeeId: emp.id }, cashTok);
-  ok("check-in", r.status === 201);
-  const attId = (r.json as { id: string }).id;
-  await new Promise((x) => setTimeout(x, 1100));
-  r = await call("POST", `/attendance/${attId}/out`, undefined, cashTok);
-  ok("check-out", r.status === 200);
+  r = await call("POST", "/attendance/mark", { employeeId: emp.id, status: "full" }, cashTok);
+  ok("mark full", r.status === 201);
+  r = await call("POST", "/attendance/mark", { employeeId: emp.id, status: "half" }, cashTok);
+  ok("mark half upsert", r.status === 201 && (r.json as { status: string }).status === "half");
   r = await call("GET", "/salaries", undefined, ownerTok2);
   ok("salaries computed", r.status === 200 && Array.isArray(r.json));
 

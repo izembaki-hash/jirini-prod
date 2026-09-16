@@ -67,7 +67,6 @@ export default function Settings() {
 
       <Card><div id="sec-prefs" className="scroll-mt-20" /><CardHeader><CardTitle>{t(L, "prefsT")}</CardTitle></CardHeader>
         <CardContent className="flex flex-col gap-3 text-sm">
-          <Toggle label={t(L, "otToggle")} on={s.overtimeOn} onFlip={() => update((p) => ({ ...p, overtimeOn: !p.overtimeOn }))} />
           <Toggle label={t(L, "crmToggle")} on={s.crmOn} onFlip={() => update((p) => ({ ...p, crmOn: !p.crmOn }))} />
           <div className="flex items-center justify-between gap-2">
             <span>{t(L, "uiLang")}</span>

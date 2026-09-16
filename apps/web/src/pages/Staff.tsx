@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { fmtDzd, todayKey, useStore, type Role } from "../store";
+import { fmtDzd, todayKey, useStore, attSummary, laborFor, FULL_DAY_HOURS, type AttStatus, type Role } from "../store";
 import { api, type ApiEmployee } from "../api";
 import { connected } from "../auth";
 import { t, type TKey } from "../i18n";
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Field, Input } from "../ui";
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Field, Input, cn } from "../ui";
 
-// 7. العمال: سجل + حضور يدوي + رواتب بالساعة الفعلية + أوفر تايم اختياري.
+// 7. العمال: سجل + حضور يومي (دوام كامل/جزئي/غياب) + رواتب بالأيام + تقارير الحضور.
 const ROLE_KEY: Record<Role, TKey> = { owner: "roleOwner", manager: "roleManager", cashier: "roleCashier", cook: "roleCook" };
+const ATT_KEY: Record<AttStatus, TKey> = { full: "attFull", half: "attHalf", absent: "attAbsent" };
 
 const toLocalEmp = (e: ApiEmployee) => ({ id: e.id, name: e.name, role: e.role as Role, rate: e.hourlyRate, hired: e.hiredAt.slice(0, 10) });
 
@@ -29,7 +30,7 @@ export default function Staff() {
         update((p) => ({
           ...p,
           employees: emps.map(toLocalEmp),
-          att: att.map((a) => ({ id: a.id, emp: a.employeeId, date: a.date, inAt: a.inAt, outAt: a.outAt, ot: a.overtimeMin })),
+          att: att.map((a) => ({ id: a.id, emp: a.employeeId, date: a.date, status: a.status })),
         }));
         const sal = await api.salaries();
         setServerSalaries(Object.fromEntries(sal.map((x) => [x.employee.id, x.total])));
@@ -37,35 +38,30 @@ export default function Staff() {
     })();
   }, [update]);
 
-  const checkIn = async (emp: string) => {
+  // تسجيل يومي واحد لكل موظف/يوم (upsert) — متصل أو محلي بنفس القاعدة.
+  const mark = async (emp: string, status: AttStatus, date: string = todayKey()) => {
     if (connected()) {
       try {
-        const a = await api.attIn(emp);
-        update((p) => ({ ...p, att: [...p.att, { id: a.id, emp: a.employeeId, date: a.date, inAt: a.inAt, outAt: null, ot: 0 }] }));
+        const a = await api.attMark(emp, status, date);
+        update((p) => ({
+          ...p,
+          att: [...p.att.filter((x) => !(x.emp === a.employeeId && x.date === a.date)),
+            { id: a.id, emp: a.employeeId, date: a.date, status: a.status }],
+        }));
       } catch { toast.error(t(L, "errSaving")); }
       return;
     }
-    update((p) => ({ ...p, att: [...p.att, { id: `a${Date.now()}`, emp, date: todayKey(), inAt: new Date().toISOString(), outAt: null, ot: 0 }] }));
-  };
-  const checkOut = async (id: string) => {
-    if (connected()) {
-      try {
-        const a = await api.attOut(id);
-        update((p) => ({ ...p, att: p.att.map((x) => (x.id === id ? { ...x, outAt: a.outAt } : x)) }));
-      } catch { toast.error(t(L, "errSaving")); }
-      return;
-    }
-    update((p) => ({ ...p, att: p.att.map((a) => (a.id === id ? { ...a, outAt: new Date().toISOString() } : a)) }));
+    update((p) => ({
+      ...p,
+      att: [...p.att.filter((x) => !(x.emp === emp && x.date === date)),
+        { id: `a${Date.now()}`, emp, date, status }],
+    }));
   };
 
   const salary = (empId: string) => {
     if (serverSalaries && empId in serverSalaries) return serverSalaries[empId];
     const e = s.employees.find((x) => x.id === empId)!;
-    return s.att.filter((a) => a.emp === empId && a.outAt).reduce((sum, a) => {
-      const h = (new Date(a.outAt!).getTime() - new Date(a.inAt).getTime()) / 3_600_000;
-      const ot = s.overtimeOn ? a.ot / 60 : 0;
-      return sum + Math.max(0, h - ot) * e.rate + ot * e.rate * 1.5;
-    }, 0);
+    return laborFor(s.att.filter((a) => a.emp === empId), [e]);
   };
 
   const addEmp = async (e: React.FormEvent) => {
@@ -113,36 +109,58 @@ export default function Staff() {
         </Card>
         <Card><CardHeader><CardTitle>{t(L, "todayAtt")}</CardTitle></CardHeader>
           <CardContent>
-            <ul className="flex flex-col gap-2 text-sm">
+            <ul className="flex flex-col gap-3 text-sm">
               {s.employees.map((e) => {
-                const open = s.att.find((a) => a.emp === e.id && a.date === todayKey() && !a.outAt);
+                const cur = s.att.find((a) => a.emp === e.id && a.date === todayKey())?.status;
                 return (
-                  <li key={e.id} className="flex items-center gap-2">
-                    <span className="flex-1 font-medium">{e.name} <span className="text-xs text-muted">({t(L, ROLE_KEY[e.role])})</span></span>
-                    {open ? (
-                      <Button size="sm" variant="outline" onClick={() => checkOut(open.id)}>{t(L, "checkOutB")} {new Date(open.inAt).toLocaleTimeString("fr-DZ", { hour: "2-digit", minute: "2-digit" })}</Button>
-                    ) : (
-                      <Button size="sm" variant="outline" onClick={() => checkIn(e.id)}>{t(L, "checkInB")}</Button>
-                    )}
+                  <li key={e.id} className="flex flex-col gap-1.5">
+                    <span className="font-medium">{e.name} <span className="text-xs font-normal text-muted">({t(L, ROLE_KEY[e.role])})</span></span>
+                    <div className="grid grid-cols-3 gap-1 rounded-[10px] border border-line bg-canvas p-1" role="radiogroup" aria-label={`${t(L, "todayAtt")} — ${e.name}`}>
+                      {(Object.keys(ATT_KEY) as AttStatus[]).map((st) => (
+                        <button
+                          key={st} type="button" role="radio" aria-checked={cur === st}
+                          onClick={() => mark(e.id, st)}
+                          className={cn(
+                            "btn-press min-h-10 touch-manipulation whitespace-nowrap rounded-lg px-2 text-[13px] font-bold transition-colors duration-150",
+                            cur === st
+                              ? st === "full" ? "bg-growth text-white shadow-sm"
+                              : st === "half" ? "bg-hold text-ink shadow-sm"
+                              : "bg-ember text-white shadow-sm"
+                              : "text-muted hover:text-ink",
+                          )}
+                        >
+                          {t(L, ATT_KEY[st])}
+                        </button>
+                      ))}
+                    </div>
                   </li>
                 );
               })}
+              {s.employees.length === 0 && <li className="text-muted">{t(L, "noEmpHint")}</li>}
             </ul>
           </CardContent>
         </Card>
       </div>
 
       <Card>
-        <CardHeader><CardTitle>{t(L, "salariesT")} {t(L, "salariesSub")}{s.overtimeOn ? t(L, "otSuffix") : ""})</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t(L, "salariesT")} <span className="text-sm font-normal text-muted">{t(L, "salariesSub")})</span></CardTitle></CardHeader>
         <CardContent>
           <ul className="flex flex-col">
-            {s.employees.map((e) => (
-              <li key={e.id} className="flex items-center gap-3 border-t border-line py-3 text-sm first:border-0 first:pt-0">
-                <span className="flex-1"><b className="block">{e.name}</b>
-                  <span className="tnum text-xs text-muted"><span className="tnum">{e.rate}</span> {t(L, "perHour")} · {s.att.filter((a) => a.emp === e.id).length} {t(L, "recordsU")}</span></span>
-                <Badge tone="ok"><span className="tnum">{fmtDzd(salary(e.id))}</span></Badge>
-              </li>
-            ))}
+            {s.employees.map((e) => {
+              const sm = attSummary(s.att, e.id);
+              return (
+                <li key={e.id} className="flex items-center gap-3 border-t border-line py-3 text-sm first:border-0 first:pt-0">
+                  <span className="flex-1"><b className="block">{e.name}</b>
+                    <span className="tnum text-xs text-muted">
+                      <span className="tnum">{fmtDzd(e.rate * FULL_DAY_HOURS)}</span> {t(L, "perDay")} ·
+                      <span className="tnum"> {sm.full}</span> {t(L, "attFull")} ·
+                      <span className="tnum"> {sm.half}</span> {t(L, "attHalf")} ·
+                      <span className="tnum"> {sm.absent}</span> {t(L, "attAbsent")}
+                    </span></span>
+                  <Badge tone="ok"><span className="tnum">{fmtDzd(salary(e.id))}</span></Badge>
+                </li>
+              );
+            })}
           </ul>
         </CardContent>
       </Card>

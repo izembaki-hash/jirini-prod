@@ -7,6 +7,7 @@ import { api, type ApiOrder } from "../api";
 import { connected, useAuth } from "../auth";
 import { t, type TKey } from "../i18n";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Empty, Field, Input, Segmented, StatusDot } from "../ui";
+import { StickerDoc, printDoc } from "../print";
 
 // 5. إدارة طلبات الزبائن + روابط QR الطاولات (مطاعم) + التوصيل والسائقون — برو/ميغا فقط.
 const STKEY: Record<OrderStatus, TKey> = {
@@ -122,7 +123,11 @@ export default function Orders() {
                           <span aria-hidden className={`size-2 rounded-full ${busy ? "bg-ember" : "bg-growth"}`} />
                           {t(L, "tableN")} {tb} · {busy ? t(L, "occupied") : t(L, "free")}
                         </b>
-                        <button className="text-xs text-growth-deep underline" onClick={() => window.print()}>{t(L, "printSticker")}</button>
+                        <button className="text-xs text-growth-deep underline" onClick={() => printDoc(
+                          `${t(L, "tableN")} ${tb} — ${s.businessName}`,
+                          L === "ar" ? "rtl" : "ltr",
+                          <StickerDoc shop={s.businessName} lang={L} table={String(tb)} url={`${base}?t=${tb}`} />,
+                        )}>{t(L, "printSticker")}</button>
                       </div>
                     );
                   })}

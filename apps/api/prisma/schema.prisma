@@ -189,9 +189,8 @@ model Attendance {
   employeeId String   @map("employee_id")
   employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   date       String
-  inAt       DateTime @map("in_at")
-  outAt      DateTime? @map("out_at")
-  overtimeMin Int @default(0) @map("overtime_min")
+  status     String   @default("full")
+  @@unique([tenantId, employeeId, date])
   @@index([tenantId, employeeId, date])
 }
 
