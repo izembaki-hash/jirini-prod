@@ -58,6 +58,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
         update((p) => ({
           ...p,
           businessName: tenant.name || p.businessName,
+          shopPhone: (tenant.phone as string) || "",
+          shopAddress: (tenant.address as string) || "",
+          shopLogo: (tenant.logoUrl as string) || "",
           businessType: tenant.type === "shop" ? "shop" : "restaurant",
           plan: (["starter", "pro", "mega"] as PlanId[]).includes(tenant.plan as PlanId) ? (tenant.plan as PlanId) : p.plan,
           branches: branches.map((b) => b.name),
@@ -69,7 +72,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             id: sp.id, name: sp.name, nameFr: sp.nameFr ?? sp.name,
             buy: sp.buyPrice, sell: sp.sellPrice, qty: sp.qty, min: sp.minQty,
             barcode: sp.barcode ?? undefined, cat: sp.category ?? "عام", active: sp.active,
-            saleable: sp.saleable ?? true,
+            saleable: sp.saleable ?? true, img: sp.imageUrl ?? undefined,
           })),
         }));
         // المصاريف الثابتة: فشلها لا يكسر المزامنة (الكاشير مثلاً بلا صلاحية)

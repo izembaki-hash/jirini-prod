@@ -6,6 +6,7 @@ import { ApiError, api, currentBranch, type ApiProduct } from "../api";
 import { connected } from "../auth";
 import { t } from "../i18n";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Empty, Field, Input, Segmented, cn } from "../ui";
+import { ImagePicker } from "../components/ImagePicker";
 
 // 3. المخزون: منتجات + وصفات (مطاعم) + مورّدون + مشتريات/ديون + هدر + تنبيهات.
 type Tab = "products" | "recipes" | "suppliers" | "purchases";
@@ -95,7 +96,7 @@ const toLocalProduct = (sp: ApiProduct) => ({
   barcode: sp.barcode ?? undefined, cat: sp.category ?? "عام", active: sp.active,
   saleable: sp.saleable ?? true, shelf: sp.shelf ?? undefined,
   expiry: sp.expiryDate ? String(sp.expiryDate).slice(0, 10) : undefined,
-  wholesale: sp.wholesalePrice ?? undefined,
+  wholesale: sp.wholesalePrice ?? undefined, img: sp.imageUrl ?? undefined,
 });
 
 // ─── حوار تعديل صنف: ورقة سفلية في الهاتف، بطاقة متمركزة في المكتب ───
@@ -103,7 +104,7 @@ function ProductEditDialog({ p, cats, isResto, onClose, onSave }: {
   p: Product; cats: string[]; isResto: boolean; onClose: () => void;
   onSave: (patch: {
     name: string; sell: number; buy: number; min: number; barcode?: string; cat: string;
-    saleable: boolean; active: boolean; shelf?: string; expiry?: string; wholesale?: number;
+    saleable: boolean; active: boolean; shelf?: string; expiry?: string; wholesale?: number; img?: string | null;
   }) => Promise<boolean>;
 }) {
   const { s } = useStore();
@@ -119,6 +120,7 @@ function ProductEditDialog({ p, cats, isResto, onClose, onSave }: {
   const [shelf, setShelf] = useState(p.shelf ?? "");
   const [expiry, setExpiry] = useState(p.expiry ?? "");
   const [wholesale, setWholesale] = useState(p.wholesale != null ? String(p.wholesale) : "");
+  const [img, setImg] = useState<string | null>(p.img ?? null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -140,6 +142,7 @@ function ProductEditDialog({ p, cats, isResto, onClose, onSave }: {
       shelf: !isResto && shelf.trim() ? shelf.trim() : undefined,
       expiry: !isResto && expiry ? expiry : undefined,
       wholesale: !isResto && wholesale ? Number(wholesale) || 0 : undefined,
+      img,
     });
     setBusy(false);
     if (ok) onClose();
@@ -189,6 +192,7 @@ function ProductEditDialog({ p, cats, isResto, onClose, onSave }: {
                 <Field label={t(L, "wholesaleLb")} id="ep-ws"><Input id="ep-ws" inputMode="numeric" value={wholesale} onChange={(e) => setWholesale(e.target.value)} dir="ltr" /></Field>
               </div>
             )}
+            <ImagePicker value={img} onChange={setImg} />
             <label className="flex min-h-11 cursor-pointer items-center gap-2.5 text-sm font-medium">
               <input type="checkbox" checked={saleable} onChange={(e) => setSaleable(e.target.checked)} className="size-5 shrink-0 accent-[var(--color-growth)]" />
               {t(L, "saleableLb")}
@@ -232,14 +236,14 @@ function ProductsTab() {
       const list = await api.listProducts();
       update((p) => ({
         ...p,
-        products: list.map((sp) => ({
-          id: sp.id, name: sp.name, nameFr: sp.nameFr ?? sp.name,
-          buy: sp.buyPrice, sell: sp.sellPrice, qty: sp.qty, min: sp.minQty,
-          barcode: sp.barcode ?? undefined, cat: sp.category ?? "عام", active: sp.active,
-          saleable: sp.saleable ?? true, shelf: sp.shelf ?? undefined,
-          expiry: sp.expiryDate ? String(sp.expiryDate).slice(0, 10) : undefined,
-          wholesale: sp.wholesalePrice ?? undefined,
-        })),
+          products: list.map((sp) => ({
+            id: sp.id, name: sp.name, nameFr: sp.nameFr ?? sp.name,
+            buy: sp.buyPrice, sell: sp.sellPrice, qty: sp.qty, min: sp.minQty,
+            barcode: sp.barcode ?? undefined, cat: sp.category ?? "عام", active: sp.active,
+            saleable: sp.saleable ?? true, shelf: sp.shelf ?? undefined,
+            expiry: sp.expiryDate ? String(sp.expiryDate).slice(0, 10) : undefined,
+            wholesale: sp.wholesalePrice ?? undefined, img: sp.imageUrl ?? undefined,
+          })),
       }));
     } catch { /* تجاهل */ }
   };
@@ -272,7 +276,7 @@ function ProductsTab() {
   // حفظ تعديل صنف: الخادم أولاً عند الاتصال، ثم المحلي — يُعيد false عند الفشل.
   const saveEdit = async (id: string, patch: {
     name: string; sell: number; buy: number; min: number; barcode?: string; cat: string;
-    saleable: boolean; active: boolean; shelf?: string; expiry?: string; wholesale?: number;
+    saleable: boolean; active: boolean; shelf?: string; expiry?: string; wholesale?: number; img?: string | null;
   }): Promise<boolean> => {
     if (connected()) {
       try {
@@ -280,12 +284,12 @@ function ProductsTab() {
           name: patch.name, sellPrice: patch.sell, buyPrice: patch.buy, minQty: patch.min,
           barcode: patch.barcode || null, category: patch.cat, saleable: patch.saleable, active: patch.active,
           shelf: patch.shelf || null, expiryDate: patch.expiry || null,
-          wholesalePrice: patch.wholesale ?? null,
+          wholesalePrice: patch.wholesale ?? null, imageUrl: patch.img ?? null,
         });
         update((p) => ({ ...p, products: p.products.map((x) => (x.id === id ? toLocalProduct(sp) : x)) }));
       } catch (ex) { errToast(L, ex, t(L, "errSaving")); return false; }
     } else {
-      update((p) => ({ ...p, products: p.products.map((x) => (x.id === id ? { ...x, ...patch } : x)) }));
+      update((p) => ({ ...p, products: p.products.map((x) => (x.id === id ? { ...x, ...patch, img: patch.img ?? undefined } : x)) }));
     }
     toast.success(t(L, "prodUpdated"));
     return true;
@@ -602,13 +606,15 @@ function SuppliersTab() {
 function PurchasesTab() {
   const { s, update } = useStore();
   const L = s.lang;
-  const [supId, setSupId] = useState(s.suppliers[0]?.id ?? "");
-  const [rows, setRows] = useState<{ productId: string; qty: string; unitCost: string }[]>([{ productId: "", qty: "", unitCost: "" }]);
+  const [supId, setSupId] = useState(s.suppliers[0]?.id ?? "personal");
+  const [rows, setRows] = useState<{ productId: string; manual: string; qty: string; unitCost: string }[]>([{ productId: "", manual: "", qty: "", unitCost: "" }]);
   const [paid, setPaid] = useState("");
   const [method, setMethod] = useState("cash");
   const [payFor, setPayFor] = useState("");
   const [payAmt, setPayAmt] = useState("");
-  const effSup = supId || s.suppliers[0]?.id || "";
+  const [err, setErr] = useState("");
+  const personal = supId === "personal";
+  const effSup = personal ? null : supId || s.suppliers[0]?.id || null;
 
   // تعبئة مسبقة من تنبيه نفاد في اللوحة
   useEffect(() => {
@@ -618,7 +624,7 @@ function PurchasesTab() {
       localStorage.removeItem("dz-purchase-prefill");
       const { productId } = JSON.parse(raw) as { productId: string };
       const p = s.products.find((x) => x.id === productId);
-      if (p) setRows([{ productId, qty: String(Math.max(1, p.min * 2)), unitCost: String(p.buy) }]);
+      if (p) setRows([{ productId, manual: "", qty: String(Math.max(1, p.min * 2)), unitCost: String(p.buy) }]);
     } catch { /* تجاهل */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -635,13 +641,21 @@ function PurchasesTab() {
   const total = rows.reduce((x, r) => x + (Number(r.qty) || 0) * (Number(r.unitCost) || 0), 0);
 
   const save = async () => {
-    const lines = rows.filter((r) => r.productId && Number(r.qty) > 0)
+    setErr("");
+    const lines = rows
+      .filter((r) => (r.productId || r.manual.trim()) && Number(r.qty) > 0)
       .map((r) => {
-        const p = s.products.find((x) => x.id === r.productId)!;
-        return { productId: r.productId, name: p.name, qty: Number(r.qty), unitCost: Number(r.unitCost) || 0 };
+        if (r.productId) {
+          const p = s.products.find((x) => x.id === r.productId)!;
+          return { productId: r.productId, name: p.name, qty: Number(r.qty), unitCost: Number(r.unitCost) || 0 };
+        }
+        return { productId: "", name: r.manual.trim(), qty: Number(r.qty), unitCost: Number(r.unitCost) || 0 };
       });
-    if (!effSup || lines.length === 0) return;
-    const paidNow = Number(paid) || 0;
+    if (lines.length === 0) return;
+    const paidNow = personal ? total : Number(paid) || 0;
+    if (personal && total <= 0) return;
+    if (!personal && !effSup) { setErr(t(L, "errSaving")); return; }
+    if (personal && paidNow < total - 1e-9) { setErr(t(L, "purPersonalUnpaid")); return; }
     if (connected()) {
       try {
         const created = await api.createPurchase({ supplierId: effSup, lines, paid: paidNow, method });
@@ -649,7 +663,7 @@ function PurchasesTab() {
           ...p,
           purchases: [{ id: created.id, num: created.num, supplierId: created.supplierId, lines: created.lines, total: created.total, paid: created.paid, status: created.status, date: created.date }, ...p.purchases],
           products: p.products.map((pr) => {
-            const l = lines.find((x) => x.productId === pr.id);
+            const l = lines.find((x) => x.productId && x.productId === pr.id);
             return l ? { ...pr, qty: pr.qty + l.qty, buy: l.unitCost } : pr;
           }),
         }));
@@ -662,14 +676,14 @@ function PurchasesTab() {
         ...p,
         purchases: [{ id: `pur${Date.now()}`, num, supplierId: effSup, lines, total, paid: paidNow, status: st, date: new Date().toISOString().slice(0, 10) }, ...p.purchases],
         products: p.products.map((pr) => {
-          const l = lines.find((x) => x.productId === pr.id);
+          const l = lines.find((x) => x.productId && x.productId === pr.id);
           return l ? { ...pr, qty: pr.qty + l.qty, buy: l.unitCost } : pr;
         }),
-        suppliers: p.suppliers.map((x) => x.id === effSup ? { ...x, owed: (x.owed ?? 0) + total, paid: (x.paid ?? 0) + paidNow, balance: (x.balance ?? 0) + total - paidNow } : x),
+        suppliers: effSup ? p.suppliers.map((x) => x.id === effSup ? { ...x, owed: (x.owed ?? 0) + total, paid: (x.paid ?? 0) + paidNow, balance: (x.balance ?? 0) + total - paidNow } : x) : p.suppliers,
       }));
       toast.success(t(L, "purDone"));
     }
-    setRows([{ productId: "", qty: "", unitCost: "" }]); setPaid("");
+    setRows([{ productId: "", manual: "", qty: "", unitCost: "" }]); setPaid(""); setErr("");
   };
 
   const pay = async (id: string) => {
@@ -704,31 +718,49 @@ function PurchasesTab() {
         <CardHeader><CardTitle>{t(L, "purTitle")}</CardTitle></CardHeader>
         <CardContent className="flex flex-col gap-3">
           <Field label={t(L, "purSup")} id="ps">
-            <select id="ps" value={effSup} onChange={(e) => setSupId(e.target.value)} className="h-11 rounded-[10px] border border-line bg-surface px-3 text-sm">
+            <select id="ps" value={personal ? "personal" : effSup ?? ""} onChange={(e) => setSupId(e.target.value)} className="h-11 rounded-[10px] border border-line bg-surface px-3 text-sm">
               {s.suppliers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+              <option value="personal">{t(L, "purPersonal")}</option>
             </select>
+            {personal && <p className="text-xs text-muted">{t(L, "purPersonalHint")}</p>}
           </Field>
           {rows.map((r, i) => (
-            <div key={i} className="grid grid-cols-[1fr_auto_auto] gap-2">
-              <select value={r.productId} onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, productId: e.target.value } : x))}
-                aria-label={t(L, "prodLb")} className="h-11 rounded-[10px] border border-line bg-surface px-3 text-sm">
-                <option value="">…</option>
-                {s.products.map((p) => <option key={p.id} value={p.id}>{displayName(p, L)}</option>)}
-              </select>
-              <Input value={r.qty} onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))} inputMode="decimal" placeholder={t(L, "pQty")} aria-label={t(L, "pQty")} className="w-20" />
-              <Input value={r.unitCost} onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, unitCost: e.target.value } : x))} inputMode="decimal" placeholder={t(L, "pBuy")} aria-label={t(L, "pBuy")} className="w-24" />
+            <div key={i} className="flex flex-col gap-1.5 rounded-xl border border-line p-2.5">
+              <div className="grid grid-cols-[1fr_auto_auto] gap-2">
+                <select value={r.productId} onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, productId: e.target.value, manual: e.target.value ? "" : x.manual } : x))}
+                  aria-label={t(L, "prodLb")} className="h-11 rounded-[10px] border border-line bg-surface px-3 text-sm">
+                  <option value="">…</option>
+                  {s.products.map((p) => <option key={p.id} value={p.id}>{displayName(p, L)}</option>)}
+                </select>
+                <Input value={r.qty} onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))} inputMode="decimal" placeholder={t(L, "pQty")} aria-label={t(L, "pQty")} className="w-20" />
+                <Input value={r.unitCost} onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, unitCost: e.target.value } : x))} inputMode="decimal" placeholder={t(L, "pBuy")} aria-label={t(L, "pBuy")} className="w-24" />
+              </div>
+              {!r.productId && (
+                <Input value={r.manual} onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, manual: e.target.value } : x))}
+                  placeholder={t(L, "purManualName")} aria-label={t(L, "purManualName")} />
+              )}
             </div>
           ))}
           <div className="grid grid-cols-3 gap-2">
-            <Button variant="outline" onClick={() => setRows([...rows, { productId: "", qty: "", unitCost: "" }])}>{t(L, "purAddLine")}</Button>
-            <Field label={t(L, "purPaidNow")} id="pp"><Input id="pp" inputMode="numeric" value={paid} onChange={(e) => setPaid(e.target.value)} /></Field>
-            <Field label={t(L, "purMethod")} id="pm">
-              <select id="pm" value={method} onChange={(e) => setMethod(e.target.value)} className="h-11 rounded-[10px] border border-line bg-surface px-3 text-sm">
-                <option value="cash">{t(L, "cashM")}</option>
-                <option value="card">{t(L, "card")}</option>
-              </select>
-            </Field>
+            <Button variant="outline" onClick={() => setRows([...rows, { productId: "", manual: "", qty: "", unitCost: "" }])}>{t(L, "purAddLine")}</Button>
+            {personal ? (
+              <div className="col-span-2 flex items-center rounded-[10px] border border-line bg-canvas px-3 text-sm">
+                <span className="text-muted">{t(L, "purPaidNow")}</span>
+                <b className="tnum ms-auto">{fmtDzd(total)}</b>
+              </div>
+            ) : (
+              <>
+                <Field label={t(L, "purPaidNow")} id="pp"><Input id="pp" inputMode="numeric" value={paid} onChange={(e) => setPaid(e.target.value)} /></Field>
+                <Field label={t(L, "purMethod")} id="pm">
+                  <select id="pm" value={method} onChange={(e) => setMethod(e.target.value)} className="h-11 rounded-[10px] border border-line bg-surface px-3 text-sm">
+                    <option value="cash">{t(L, "cashM")}</option>
+                    <option value="card">{t(L, "card")}</option>
+                  </select>
+                </Field>
+              </>
+            )}
           </div>
+          {err && <p role="alert" className="rounded-[10px] bg-ember/10 px-3 py-2.5 text-sm font-bold text-ember">{err}</p>}
           <div className="flex items-center justify-between">
             <span className="tnum font-bold">{t(L, "total")}: {fmtDzd(total)}</span>
             <Button onClick={save}>{t(L, "purSave")}</Button>
@@ -745,14 +777,14 @@ function PurchasesTab() {
                 <li key={x.id} className="flex flex-col gap-1.5 rounded-xl border border-line p-3 text-sm">
                   <div className="flex items-center gap-2">
                     <b className="tnum">#{x.num}</b>
-                    <span className="flex-1">{sup?.name ?? ""} · <span className="tnum">{x.date.slice(0, 10)}</span></span>
+                    <span className="flex-1">{x.supplierId ? sup?.name ?? "" : t(L, "purPersonal")} · <span className="tnum">{x.date.slice(0, 10)}</span></span>
                     <Badge tone={stTone(x.status) as "ok" | "warn" | "bad"}>{stLabel(x.status)}</Badge>
                   </div>
                   <div className="tnum text-xs text-muted">{x.lines.map((l) => `${l.name} ×${l.qty}`).join(L === "ar" ? "، " : ", ")}</div>
                   <div className="flex items-center gap-2">
                     <b className="tnum">{fmtDzd(x.total)}</b>
                     <span className="tnum text-xs text-muted">{t(L, "supPaid")}: {fmtDzd(x.paid)}</span>
-                    {x.status !== "paid" && payFor !== x.id && (
+                    {x.status !== "paid" && x.supplierId && payFor !== x.id && (
                       <button className="ms-auto rounded-lg border border-line px-2 py-1 text-xs font-bold" onClick={() => { setPayFor(x.id); setPayAmt(String(Math.round(x.total - x.paid))); }}>{t(L, "purPay")}</button>
                     )}
                   </div>

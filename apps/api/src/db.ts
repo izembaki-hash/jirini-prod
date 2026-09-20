@@ -31,6 +31,10 @@ export interface ShiftRow {
 }
 export interface EmployeeRow {
   id: string; tenantId: string; branchId: string; name: string; role: string; hiredAt: string; hourlyRate: number;
+  title: string | null; halfWage: number;
+}
+export interface SalaryAdvanceRow {
+  id: string; tenantId: string; employeeId: string; amount: number; date: string; note: string | null;
 }
 export type AttendanceStatus = "full" | "half" | "absent";
 export interface AttendanceRow {
@@ -58,7 +62,7 @@ export interface SupplierRow {
 }
 export interface PurchaseLineRow { productId: string; name: string; qty: number; unitCost: number }
 export interface PurchaseRow {
-  id: string; num: number; tenantId: string; supplierId: string;
+  id: string; num: number; tenantId: string; supplierId: string | null;
   lines: PurchaseLineRow[]; total: number; paid: number; status: string;
   date: string; notes: string | null;
 }
@@ -109,6 +113,11 @@ export interface DbPort {
   setUserPassword(tenantId: string, userId: string, passwordHash: string): Promise<void>;
   listEmployees(tenantId: string): Promise<EmployeeRow[]>;
   createEmployee(e: Omit<EmployeeRow, "id">): Promise<EmployeeRow>;
+  updateEmployee(tenantId: string, id: string, patch: Partial<EmployeeRow>): Promise<EmployeeRow>;
+  // سلف الموظفين
+  listAdvances(tenantId: string, employeeId?: string): Promise<SalaryAdvanceRow[]>;
+  createAdvance(a: Omit<SalaryAdvanceRow, "id">): Promise<SalaryAdvanceRow>;
+  deleteAdvance(tenantId: string, id: string): Promise<void>;
   createUser(u: Omit<UserRow, "id">): Promise<UserRow>;
   // منتجات ومخزون
   listProducts(tenantId: string, branchId?: string): Promise<ProductRow[]>;
@@ -229,6 +238,20 @@ export class MemoryAdapter implements DbPort {
   }
   async listEmployees(tenantId: string) { return this.employees.filter((e) => e.tenantId === tenantId); }
   async createEmployee(e: Omit<EmployeeRow, "id">) { const r = { ...e, id: uid("e") }; this.employees.push(r); return r; }
+  async updateEmployee(tenantId: string, id: string, patch: Partial<EmployeeRow>) {
+    const e = this.employees.find((x) => x.id === id && x.tenantId === tenantId); if (!e) throw new Error("employee");
+    Object.assign(e, patch); return e;
+  }
+  advances: SalaryAdvanceRow[] = [];
+  async listAdvances(tenantId: string, employeeId?: string) {
+    return this.advances.filter((a) => a.tenantId === tenantId && (!employeeId || a.employeeId === employeeId));
+  }
+  async createAdvance(a: Omit<SalaryAdvanceRow, "id">) {
+    const r = { ...a, id: uid("adv") }; this.advances.push(r); return r;
+  }
+  async deleteAdvance(tenantId: string, id: string) {
+    this.advances = this.advances.filter((a) => !(a.id === id && a.tenantId === tenantId));
+  }
   async createUser(u: Omit<UserRow, "id">) { const r = { ...u, id: uid("u") }; this.users.push(r); return r; }
   async listAllUsers() {
     return this.users.map(({ passwordHash: _drop, ...u }) => u);
@@ -397,10 +420,13 @@ export class MemoryAdapter implements DbPort {
     if (amount <= 0 || p.paid + amount > p.total + 1e-9) throw Object.assign(new Error("overpay"), { status: 400 });
     p.paid = Math.round((p.paid + amount) * 100) / 100;
     p.status = purchaseStatus(p.total, p.paid);
-    this.payments.unshift({
-      id: uid("pay"), tenantId, supplierId: p.supplierId, purchaseId: p.id,
-      amount, method, ref: ref ?? null, date: now(),
-    });
+    // الاقتناء الشخصي بلا سجل مورّد — المبلغ مدفوع نقداً وانتهى
+    if (p.supplierId) {
+      this.payments.unshift({
+        id: uid("pay"), tenantId, supplierId: p.supplierId, purchaseId: p.id,
+        amount, method, ref: ref ?? null, date: now(),
+      });
+    }
     return p;
   }
 
@@ -483,7 +509,7 @@ export class MemoryAdapter implements DbPort {
 type PrismaModel = {
   findFirst(a?: unknown): Promise<unknown>; findMany(a?: unknown): Promise<unknown[]>;
   create(a: unknown): Promise<unknown>; update(a: unknown): Promise<unknown>;
-  delete(a: unknown): Promise<unknown>; count(a?: unknown): Promise<number>;
+  delete(a: unknown): Promise<unknown>; deleteMany(a?: unknown): Promise<unknown>; count(a?: unknown): Promise<number>;
 };
 type PrismaClientLike = Record<string, PrismaModel> & { $disconnect(): Promise<void> };
 
@@ -574,6 +600,22 @@ export class PrismaAdapter implements DbPort {
     return PrismaAdapter.row<EmployeeRow>(await this.m("employee").create({
       data: { ...e, hiredAt: new Date(e.hiredAt) },
     }));
+  }
+  async updateEmployee(tenantId: string, id: string, patch: Partial<EmployeeRow>) {
+    const cur = await this.m("employee").findFirst({ where: { id, tenantId } });
+    if (!cur) throw new Error("employee");
+    return PrismaAdapter.row<EmployeeRow>(await this.m("employee").update({ where: { id }, data: { ...patch } }));
+  }
+  async listAdvances(tenantId: string, employeeId?: string) {
+    return PrismaAdapter.row<SalaryAdvanceRow[]>(await this.m("salaryAdvance").findMany({
+      where: { tenantId, ...(employeeId ? { employeeId } : {}) }, orderBy: { date: "desc" }, take: 500,
+    }));
+  }
+  async createAdvance(a: Omit<SalaryAdvanceRow, "id">) {
+    return PrismaAdapter.row<SalaryAdvanceRow>(await this.m("salaryAdvance").create({ data: { ...a } }));
+  }
+  async deleteAdvance(tenantId: string, id: string) {
+    await this.m("salaryAdvance").deleteMany({ where: { id, tenantId } });
   }
   async createUser(u: Omit<UserRow, "id">) {
     return PrismaAdapter.row<UserRow>(await this.m("user").create({ data: u }));
@@ -808,9 +850,11 @@ export class PrismaAdapter implements DbPort {
       throw Object.assign(new Error("overpay"), { status: 400 });
     }
     const paid = Math.round((cur.paid + amount) * 100) / 100;
-    await this.m("supplierPayment").create({
-      data: { tenantId, supplierId: cur.supplierId, purchaseId: cur.id, amount, method, ref: ref ?? null },
-    });
+    if (cur.supplierId) {
+      await this.m("supplierPayment").create({
+        data: { tenantId, supplierId: cur.supplierId, purchaseId: cur.id, amount, method, ref: ref ?? null },
+      });
+    }
     await this.m("purchase").update({ where: { id }, data: { paid, status: purchaseStatus(cur.total, paid) } });
     return { ...cur, paid, status: purchaseStatus(cur.total, paid) };
   }

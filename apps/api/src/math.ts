@@ -24,17 +24,15 @@ export function shiftExpected(opening: number, cashSales: number): number {
   return opening + cashSales;
 }
 
-// ساعات اليوم الكامل — الدوام الجزئي = النصف، الغياب = صفر.
-export const FULL_DAY_HOURS = 8;
-
+// الأجر على أساس الدوام الجزئي: الكامل = الجزئي × 2، الغياب = صفر.
 export function salaryFor(
   records: { status: string }[],
-  hourlyRate: number,
+  halfWage: number,
 ): number {
   let total = 0;
   for (const a of records) {
-    if (a.status === "full") total += FULL_DAY_HOURS * hourlyRate;
-    else if (a.status === "half") total += (FULL_DAY_HOURS / 2) * hourlyRate;
+    if (a.status === "full") total += halfWage * 2;
+    else if (a.status === "half") total += halfWage;
   }
   return Math.round(total);
 }

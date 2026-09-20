@@ -27,9 +27,14 @@ async function main() {
   ok("create branch", !!branch.id && (await db.listBranches(tenant.id)).length === 1);
 
   const emp = await db.createEmployee({
-    tenantId: tenant.id, branchId: branch.id, name: "E", role: "cashier",
-    hiredAt: "2024-01-01", hourlyRate: 200,
+    tenantId: tenant.id, branchId: branch.id, name: "E", role: "cashier", title: "Caissier",
+    hiredAt: "2024-01-01", hourlyRate: 200, halfWage: 800,
   });
+  ok("employee halfWage", (await db.listEmployees(tenant.id))[0]?.halfWage === 800);
+  const adv = await db.createAdvance({ tenantId: tenant.id, employeeId: emp.id, amount: 100, date: "2026-09-08", note: null });
+  ok("advance roundtrip", (await db.listAdvances(tenant.id, emp.id)).length === 1);
+  await db.deleteAdvance(tenant.id, adv.id);
+  ok("advance delete", (await db.listAdvances(tenant.id, emp.id)).length === 0);
   await db.createUser({
     tenantId: tenant.id, employeeId: emp.id, name: "E", phone: "0550000001",
     passwordHash: "h", role: "cashier", branchId: branch.id, active: true,

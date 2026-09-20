@@ -2,7 +2,7 @@ import { useState } from "react";
 import { fmtDzd, profitOf, useStore, displayName, dailySlice, laborFor, attSummary } from "../store";
 import { t } from "../i18n";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Segmented, Stat } from "../ui";
-import { ReportDoc, printDoc } from "../print";
+import { ReportDoc, printDoc, shopOf } from "../print";
 import { Bars } from "../components/Charts";
 
 // 8. التقارير: مبيعات/أرباح/منتج/موظف/فرع/حضور + حساب P&L + تصدير (طباعة/PDF وCSV).
@@ -56,7 +56,7 @@ export default function Reports() {
       `${t(L, "repTitle")} — ${s.businessName}`,
       L === "ar" ? "rtl" : "ltr",
       <ReportDoc d={{
-        shop: s.businessName, lang: L, title: t(L, "repTitle"), period: periodLb,
+        shop: shopOf(s), lang: L, title: t(L, "repTitle"), period: periodLb,
         kpis: [
           { label: t(L, "statSales"), value: fmtDzd(sales) },
           { label: t(L, "statProfit"), value: fmtDzd(profit) },

@@ -29,7 +29,7 @@ export default function Wizard() {
     setStep(1);
   };
   const finishEmp = () => {
-    if (emp.trim()) update((p) => ({ ...p, employees: [...p.employees, { id: `e${Date.now()}`, name: emp.trim(), role: "cashier", rate: 300, hired: new Date().toISOString().slice(0, 10) }] }));
+    if (emp.trim()) update((p) => ({ ...p, employees: [...p.employees, { id: `e${Date.now()}`, name: emp.trim(), role: "cashier", title: undefined, half: 1000, hired: new Date().toISOString().slice(0, 10) }] }));
     setStep(2);
   };
 

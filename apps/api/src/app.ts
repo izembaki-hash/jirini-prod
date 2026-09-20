@@ -45,7 +45,7 @@ const zShiftClose = z.object({ closingCash: z.number().min(0), note: z.string().
   const zUser = z.object({
     name: z.string().min(2), phone: z.string().min(9), password: z.string().min(6),
     role: z.enum(["owner", "manager", "cashier", "cook"]),
-    hourlyRate: z.number().min(0).default(0), branchId: z.string().optional(),
+    title: z.string().max(60).optional(), halfWage: z.number().min(0).default(0), branchId: z.string().optional(),
   });
   const zDriver = z.object({
     name: z.string().min(2), phone: z.string().min(7),
@@ -106,7 +106,7 @@ export async function buildApp(db?: DbPort) {
   const loginLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
   const publicLimit = rateLimit({ windowMs: 60 * 1000, max: 30 });
   const signupLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 5 });
-  const sensitiveLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 30 });
+  const sensitiveLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: Number(process.env.RATE_LIMIT_SENSITIVE ?? 30) });
   // شبكة أمان عامة بسقف سخي (لا تعيق POS) — الحدود الضيقة أعلاه تبقى للمسارات الحساسة
   const globalLimit = rateLimit({
     windowMs: 15 * 60 * 1000, max: 2000,
@@ -166,8 +166,8 @@ export async function buildApp(db?: DbPort) {
       });
       const branch = await dbx.createBranch({ tenantId: tenant.id, name: "الفرع الرئيسي", address: b.address });
       const emp = await dbx.createEmployee({
-        tenantId: tenant.id, branchId: branch.id, name: b.ownerName, role: "owner",
-        hiredAt: algiersDay(), hourlyRate: 0,
+        tenantId: tenant.id, branchId: branch.id, name: b.ownerName, role: "owner", title: null,
+        hiredAt: algiersDay(), hourlyRate: 0, halfWage: 0,
       });
       // مستخدم المالك بدون كلمة سر بعد — تُضبط عبر /public/set-password بعد الدفع.
       await dbx.createUser({
@@ -279,6 +279,45 @@ export async function buildApp(db?: DbPort) {
     catch (e) { next(e); }
   });
 
+  // تعديل بيانات موظف (المسمى/الأجر/الاسم) — الصلاحية تبقى من حساب الدخول
+  app.patch("/employees/:id", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
+    try {
+      const b = z.object({
+        name: z.string().min(2).optional(), title: z.string().max(60).nullable().optional(),
+        halfWage: z.number().min(0).optional(),
+      }).parse(req.body);
+      res.json(await dbx.updateEmployee(req.auth!.tenant_id, req.params.id, {
+        ...(b.name ? { name: b.name } : {}),
+        ...(b.title !== undefined ? { title: b.title?.trim() || null } : {}),
+        ...(b.halfWage !== undefined ? { halfWage: b.halfWage } : {}),
+      }));
+    } catch (e) { next(e); }
+  });
+
+  // سلف/خصومات الموظفين (تُطرح من إجمالي الأجر = الصافي)
+  app.get("/salary-advances", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
+    try { res.json(await dbx.listAdvances(req.auth!.tenant_id, (req.query.employee as string) || undefined)); }
+    catch (e) { next(e); }
+  });
+  app.post("/salary-advances", requireAuth, requireRole("owner", "manager"), sensitiveLimit, async (req, res, next) => {
+    try {
+      const b = z.object({
+        employeeId: z.string().min(1), amount: z.number().positive().max(100000000),
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), note: z.string().max(200).optional(),
+      }).parse(req.body);
+      const emps = await dbx.listEmployees(req.auth!.tenant_id);
+      if (!emps.some((e) => e.id === b.employeeId)) { res.status(404).json({ error: "not_found" }); return; }
+      res.status(201).json(await dbx.createAdvance({
+        tenantId: req.auth!.tenant_id, employeeId: b.employeeId, amount: b.amount,
+        date: b.date ?? algiersDay(), note: b.note?.trim() || null,
+      }));
+    } catch (e) { next(e); }
+  });
+  app.delete("/salary-advances/:id", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
+    try { await dbx.deleteAdvance(req.auth!.tenant_id, req.params.id); res.json({ ok: true }); }
+    catch (e) { next(e); }
+  });
+
   // تغيير كلمة السر (تتطلب الحالية) — أول ما يجب فعله بعد بذرة demo1234
   app.post("/auth/change-password", requireAuth, async (req, res, next) => {
     try {
@@ -301,7 +340,8 @@ export async function buildApp(db?: DbPort) {
       const empBranch = branchOf(req) ?? b.branchId ?? req.auth!.branch_id ?? "main";
       const emp = await dbx.createEmployee({
         tenantId: t, branchId: empBranch,
-        name: b.name, role: b.role, hiredAt: new Date().toISOString().slice(0, 10), hourlyRate: b.hourlyRate,
+        name: b.name, role: b.role, title: b.title?.trim() || null,
+        hiredAt: new Date().toISOString().slice(0, 10), hourlyRate: 0, halfWage: b.halfWage,
       });
       const user = await dbx.createUser({
         tenantId: t, employeeId: emp.id, name: b.name, phone: normPhone(b.phone),
@@ -608,7 +648,7 @@ export async function buildApp(db?: DbPort) {
       const [emps, att] = await Promise.all([dbx.listEmployees(t), dbx.listAttendance(t)]);
       res.json(emps.map((e) => ({
         employee: e,
-        total: salaryFor(att.filter((a) => a.employeeId === e.id), e.hourlyRate),
+        total: salaryFor(att.filter((a) => a.employeeId === e.id), e.halfWage),
       })));
     } catch (e) { next(e); }
   });
@@ -1080,7 +1120,7 @@ export async function buildApp(db?: DbPort) {
       const dailyOh = activeOh.map((o) => ({ name: o.name, amount: dailySlice(o.monthly) }));
       const attIn = attAll.filter((a) => a.date >= since.slice(0, 10));
       const laborOf = (recs: typeof attIn) =>
-        employees.reduce((s, e) => s + salaryFor(recs.filter((a) => a.employeeId === e.id), e.hourlyRate), 0);
+        employees.reduce((s, e) => s + salaryFor(recs.filter((a) => a.employeeId === e.id), e.halfWage), 0);
       const labor = laborOf(attIn);
       const bd = profitBreakdown(live, buy, dailyOh.map((o) => ({ ...o, amount: o.amount * days })), labor);
       const perDay: { date: string; sales: number; profit: number; net: number }[] = [];
@@ -1272,7 +1312,8 @@ export async function buildApp(db?: DbPort) {
   });
 
   const zPurchaseLine = z.object({
-    productId: z.string().min(1), qty: z.number().positive().max(100000), unitCost: z.number().min(0),
+    productId: z.string().optional(), name: z.string().max(120).optional(),
+    qty: z.number().positive().max(100000), unitCost: z.number().min(0),
   });
   app.get("/purchases", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
     try { res.json(await dbx.listPurchases(req.auth!.tenant_id, (req.query.supplier as string) || undefined)); }
@@ -1281,31 +1322,40 @@ export async function buildApp(db?: DbPort) {
   app.post("/purchases", requireAuth, requireRole("owner", "manager"), sensitiveLimit, async (req, res, next) => {
     try {
       const b = z.object({
-        supplierId: z.string().min(1), lines: z.array(zPurchaseLine).min(1).max(100),
+        supplierId: z.string().min(1).nullable().optional(), lines: z.array(zPurchaseLine).min(1).max(100),
         paid: z.number().min(0).default(0), method: z.string().default("cash"),
         ref: z.string().optional(), notes: z.string().optional(), date: z.string().optional(),
       }).parse(req.body);
       const t = req.auth!.tenant_id;
-      const sup = (await dbx.listSuppliers(t)).find((s) => s.id === b.supplierId);
-      if (!sup) { res.status(404).json({ error: "not_found" }); return; }
+      // مورد محدد أو اقتناء شخصي (بلا مورد = الدفع كاملاً فوراً، لا ديون لاحقة)
+      const sup = b.supplierId ? (await dbx.listSuppliers(t)).find((s) => s.id === b.supplierId) : null;
+      if (b.supplierId && !sup) { res.status(404).json({ error: "not_found" }); return; }
       const scope = branchOf(req);
       const products = await dbx.listProducts(t);
       const pmap = new Map(products.map((p) => [p.id, p]));
       let total = 0;
       const plines = b.lines.map((l) => {
-        const p = pmap.get(l.productId);
-        if (!p || !p.active) throw Object.assign(new Error("product_unavailable"), { status: 409 });
-        if (scope && p.branchId !== scope) throw Object.assign(new Error("product_unavailable"), { status: 409 });
+        if (l.productId) {
+          const p = pmap.get(l.productId);
+          if (!p || !p.active) throw Object.assign(new Error("product_unavailable"), { status: 409 });
+          if (scope && p.branchId !== scope) throw Object.assign(new Error("product_unavailable"), { status: 409 });
+          total = Math.round((total + l.qty * l.unitCost) * 100) / 100;
+          return { productId: p.id, name: p.name, qty: l.qty, unitCost: l.unitCost };
+        }
+        // صنف يدوي (اسم مكتوب): يُسجَّل في الفاتورة بلا حركة مخزون
+        if (!l.name?.trim()) throw Object.assign(new Error("manual_name_required"), { status: 400 });
         total = Math.round((total + l.qty * l.unitCost) * 100) / 100;
-        return { productId: p.id, name: p.name, qty: l.qty, unitCost: l.unitCost };
+        return { productId: "", name: l.name.trim(), qty: l.qty, unitCost: l.unitCost };
       });
       if (b.paid > total + 1e-9) { res.status(400).json({ error: "overpay" }); return; }
+      if (!sup && b.paid < total - 1e-9) { res.status(400).json({ error: "personal_unpaid" }); return; }
       // تُنشأ الفاتورة غير مدفوعة ثم تُسجَّل الدفعة الأولى عبر نفس مسار الدفع (سجل واحد موحد)
       const created = await dbx.createPurchase({
-        tenantId: t, supplierId: sup.id, lines: plines, total, paid: 0,
+        tenantId: t, supplierId: sup?.id ?? null, lines: plines, total, paid: 0,
         date: b.date ?? new Date().toISOString(), notes: b.notes ?? null,
       });
       for (const l of plines) {
+        if (!l.productId) continue;
         await dbx.adjustStock(t, l.productId, l.qty, `purchase #${created.num}`);
         await dbx.updateProduct(t, l.productId, { buyPrice: l.unitCost });
       }

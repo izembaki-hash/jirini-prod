@@ -2,12 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Plus, X } from "@phosphor-icons/react";
 import { fmtDzd, useStore, displayName, catName } from "../store";
-import { ApiError, api, currentBranch } from "../api";
+import { ApiError, api, currentBranch, uploadUrl } from "../api";
 import { connected } from "../auth";
 import { t } from "../i18n";
 import { Badge, Button, Card, Empty, Field, Input, Segmented } from "../ui";
 import { Receipt } from "../components/Receipt";
-import { InvoiceDoc, printDoc } from "../print";
+import { ImagePicker } from "../components/ImagePicker";
+import { InvoiceDoc, printDoc, shopOf } from "../print";
 import { btSupported, btSavedName, btPrintReceipt, btErrorMessage } from "../lib/btprinter";
 import type { Order } from "../store";
 
@@ -48,7 +49,21 @@ export default function Pos() {
   const [q, setQ] = useState("");
   const [cart, setCart] = useState<Record<string, number>>({});
   const [pay, setPay] = useState<"cash" | "card" | "credit">("cash");
-  const [creditPhone, setCreditPhone] = useState("");
+  const [creditCust, setCreditCust] = useState("");
+  // العميل المطابق للمدخل (اسم أو هاتف) — الدين يُسجَّل على عميل مسجَّل فقط
+  const normCust = (v: string) => v.trim().toLowerCase();
+  const creditMatch = s.customers.find((c) =>
+    normCust(c.name) === normCust(creditCust) || c.phone.replace(/\s/g, "") === creditCust.replace(/\s/g, ""));
+
+  // سجل العملاء للاختيار عند الدين (متصل: من الخادم — تجريبي: البذور)
+  useEffect(() => {
+    if (connected()) {
+      api.customersList().then((list) => update((p) => ({
+        ...p,
+        customers: list.map((c) => ({ id: c.id, name: c.name, phone: c.phone, address: c.address ?? undefined, balance: c.balance })),
+      }))).catch(() => null);
+    }
+  }, [update]);
   const [table, setTable] = useState("");
   const [kind, setKind] = useState("dinein");
   const [discount, setDiscount] = useState("0");
@@ -56,13 +71,12 @@ export default function Pos() {
   const [cat, setCat] = useState<string>("all");
   // وضع الجملة (محل فقط): الأصناف الجديدة تُضاف بسعر الجملة حيث وُجد
   const [wholesale, setWholesale] = useState(false);
-  // إضافة سريعة لصنف/طبق جديد من نقطة البيع نفسها
+  // إضافة سريعة لصنف/طبق جديد من نقطة البيع نفسها (اسم + صنف + سعر + صورة)
   const [qaOpen, setQaOpen] = useState(false);
   const [qaName, setQaName] = useState("");
-  const [qaSell, setQaSell] = useState("");
-  const [qaBuy, setQaBuy] = useState("");
-  const [qaQty, setQaQty] = useState("50");
+  const [qaPrice, setQaPrice] = useState("");
   const [qaCat, setQaCat] = useState("");
+  const [qaImg, setQaImg] = useState<string | null>(null);
   const [qaBusy, setQaBusy] = useState(false);
   const [qaErr, setQaErr] = useState("");
   // تركيز البحث تلقائياً على الشاشات الكبيرة فقط — في الهاتف يفتح الكيبورد ويحجب المنتجات
@@ -117,19 +131,20 @@ export default function Pos() {
     setQaOpen(true);
   };
 
-  // حفظ الصنف الجديد (خادم أو محلي) ثم إدخاله في السلة مباشرة
+  // حفظ الصنف الجديد (خادم أو محلي) ثم إدخاله في السلة مباشرة.
+  // بلا أرقام يدوية: الشراء 0، المخزون مفتوح (999) يُضبط لاحقاً من المخزون.
   const quickAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     setQaErr("");
-    const sell = Number(qaSell) || 0;
+    const sell = Number(qaPrice) || 0;
     if (!qaName.trim() || sell <= 0) { setQaErr(t(L, "qaNeed")); return; }
     const category = qaCat.trim() || (cat !== "all" ? cat : "عام");
     const row = {
       name: qaName.trim(), nameFr: qaName.trim(),
       branchId: currentBranch() ?? "",
-      buyPrice: Number(qaBuy) || 0, sellPrice: sell,
-      qty: Math.max(0, Number(qaQty) || 0),
-      minQty: 5, category, active: true, saleable: true,
+      buyPrice: 0, sellPrice: sell, qty: 999, minQty: 5,
+      category, active: true, saleable: true,
+      imageUrl: qaImg || null,
     };
     setQaBusy(true);
     try {
@@ -145,6 +160,7 @@ export default function Pos() {
             buy: created.buyPrice, sell: created.sellPrice, qty: created.qty, min: created.minQty,
             barcode: created.barcode ?? undefined, cat: created.category ?? category,
             active: created.active, saleable: created.saleable ?? true,
+            img: created.imageUrl ?? qaImg ?? undefined,
           }],
         }));
       } else {
@@ -152,14 +168,15 @@ export default function Pos() {
         update((p) => ({
           ...p,
           products: [...p.products, {
-            id, name: row.name, nameFr: row.name, buy: row.buyPrice, sell: row.sellPrice,
-            qty: row.qty, min: 5, cat: category, active: true, saleable: true,
+            id, name: row.name, nameFr: row.name, buy: 0, sell,
+            qty: 999, min: 5, cat: category, active: true, saleable: true,
+            img: qaImg ?? undefined,
           }],
         }));
       }
       setCart((c) => ({ ...c, [id]: (c[id] ?? 0) + 1 }));
       toast.success(t(L, "qaAdded"));
-      setQaName(""); setQaSell(""); setQaBuy(""); setQaQty("50"); setQaCat("");
+      setQaName(""); setQaPrice(""); setQaCat(""); setQaImg(null);
       setQaOpen(false);
     } catch (ex) {
       setQaErr(ex instanceof ApiError ? `${t(L, "errSaving")} (${ex.code})` : t(L, "eConn"));
@@ -169,7 +186,7 @@ export default function Pos() {
   const charge = async () => {
     if (lines.length === 0) return;
     if (!s.shift || s.shift.closedAt) { toast.error(t(L, "needShiftToast")); return; }
-    if (pay === "credit" && !creditPhone.trim()) { toast.error(t(L, "creditPhoneReq")); return; }
+    if (pay === "credit" && !creditMatch) { toast.error(t(L, "creditCustReq")); return; }
     // المحل بلا طاولات: كل مبيعاته استلام/خارجية
     const effKind = s.businessType === "restaurant" ? kind : "takeaway";
     // متصل: الخادم هو مصدر الحقيقة (أسعار من المخزون + خصم تلقائي + ربط وردية).
@@ -179,9 +196,9 @@ export default function Pos() {
           branchId: currentBranch() ?? "main", kind: effKind, tableNo: table || undefined,
           lines: lines.map((l) => ({ productId: l.id, qty: l.qty, price: priceOf(l) })),
           discount: Number(discount) || 0, tax: 0, payMethod: pay,
-          ...(pay === "credit" ? { phone: creditPhone.trim() } : {}),
+          ...(pay === "credit" && creditMatch ? { phone: creditMatch.phone, customer: creditMatch.name } : {}),
         });
-        setCart({}); setDiscount("0"); setCreditPhone("");
+        setCart({}); setDiscount("0"); setCreditCust("");
         update((p) => ({
           ...p,
           products: p.products.map((pr) => {
@@ -193,6 +210,7 @@ export default function Pos() {
             status: "preparing",
             lines: created.lines.map((l) => ({ productId: l.productId, name: l.name, qty: l.qty, price: l.price })),
             discount: created.discount, pay, at: created.createdAt, total: created.total,
+            customer: pay === "credit" && creditMatch ? creditMatch.name : undefined,
           }, ...p.orders],
         }));
         setLastId(created.id);
@@ -231,13 +249,17 @@ export default function Pos() {
         if (pr.id in ingQty) q = Math.max(0, q - (pr.qty - ingQty[pr.id]));
         return { ...pr, qty: q };
       }),
+      customers: pay === "credit" && creditMatch
+        ? p.customers.map((c) => (c.id === creditMatch.id ? { ...c, balance: (c.balance ?? 0) + total } : c))
+        : p.customers,
       orders: [{
         id, num, kind: effKind, table: table || undefined, status: s.businessType === "restaurant" ? "preparing" : "delivered",
         lines: lines.map((l) => ({ productId: l.id, name: l.name, qty: l.qty, price: priceOf(l) })),
         discount: Number(discount) || 0, pay, at: new Date().toISOString(), total,
+        customer: pay === "credit" && creditMatch ? creditMatch.name : undefined,
       }, ...p.orders],
     }));
-    setCart({}); setDiscount("0"); setLastId(id);
+    setCart({}); setDiscount("0"); setLastId(id); setCreditCust("");
     toast.success(`${t(L, "soldOk")} #${num} — ${fmtDzd(total)}`);
     for (const w of warns) toast.warning(`${t(L, "warnIng")}${w}`);
   };
@@ -290,9 +312,13 @@ export default function Pos() {
             {list.map((p) => (
               <li key={p.id}>
                 <button onClick={() => add(p.id)} disabled={p.qty <= 0}
-                  className="btn-press flex min-h-[104px] w-full touch-manipulation flex-col items-start justify-between gap-1.5 rounded-2xl border border-line bg-surface p-3 text-start transition-colors hover:border-growth active:border-growth disabled:opacity-50"
+                  className="btn-press flex min-h-[104px] w-full touch-manipulation flex-col items-stretch justify-between gap-1.5 rounded-2xl border border-line bg-surface p-2.5 text-start transition-colors hover:border-growth active:border-growth disabled:opacity-50"
                   aria-label={`${t(L, "addVerb")} ${displayName(p, L)} — ${fmtDzd(unitPrice(p))}`}>
-                  <span className="text-sm font-bold leading-snug">{displayName(p, L)}</span>
+                  {p.img ? (
+                    <img src={uploadUrl(p.img) ?? ""} alt="" loading="lazy"
+                      className="h-20 w-full rounded-xl bg-canvas object-cover" />
+                  ) : null}
+                  <span className="px-0.5 text-sm font-bold leading-snug">{displayName(p, L)}</span>
                   <span className="flex w-full items-center justify-between gap-2">
                     <span className="tnum text-sm font-bold text-growth-deep">{fmtDzd(unitPrice(p))}{wholesale && p.wholesale ? ` (${t(L, "wholesaleLb")})` : ""}</span>
                     {p.qty <= 0 ? <Badge tone="bad">{t(L, "outOfStock")}</Badge> : p.qty <= p.min ? <Badge tone="warn">{t(L, "low")} <span className="tnum">{p.qty}</span></Badge> : <span className="tnum text-xs text-muted">{p.qty}</span>}
@@ -345,9 +371,16 @@ export default function Pos() {
                   ]}
                   onChange={setPay} />
                 {pay === "credit" && (
-                  <Field label={t(L, "creditPhoneLb")} id="crph">
-                    <Input id="crph" value={creditPhone} onChange={(e) => setCreditPhone(e.target.value)} inputMode="tel" dir="ltr" placeholder="0550…" />
-                  </Field>
+                  <>
+                    <Field label={t(L, "creditCust")} id="crph" hint={s.customers.length === 0 ? t(L, "noCustHint") : t(L, "creditCustHint")}>
+                      <Input id="crph" value={creditCust} onChange={(e) => setCreditCust(e.target.value)}
+                        list="credit-custs" autoComplete="off" enterKeyHint="done"
+                        placeholder={s.customers[0] ? s.customers[0].name : ""} />
+                    </Field>
+                    <datalist id="credit-custs">
+                      {s.customers.map((c) => <option key={c.id} value={c.name}>{c.phone}</option>)}
+                    </datalist>
+                  </>
                 )}
               </div>
             </div>
@@ -366,7 +399,7 @@ export default function Pos() {
             <Button variant="outline" onClick={() => printDoc(
               `${t(L, "invTitle")} #${last.num} — ${s.businessName}`,
               L === "ar" ? "rtl" : "ltr",
-              <InvoiceDoc shop={s.businessName} lang={L} order={last} />,
+              <InvoiceDoc shop={shopOf(s)} lang={L} order={last} customer={last.customer} />,
             )}>{t(L, "print")} / PDF</Button>
           </div>
         )}
@@ -410,27 +443,20 @@ export default function Pos() {
                   <Input id="qa-name" value={qaName} onChange={(e) => setQaName(e.target.value)}
                     autoFocus autoComplete="off" enterKeyHint="next" placeholder={s.businessType === "restaurant" ? "طاكوس دجاج" : "سكر 1كغ"} />
                 </Field>
-                <div className="grid grid-cols-3 gap-2">
-                  <Field label={t(L, "pSell")} id="qa-sell">
-                    <Input id="qa-sell" value={qaSell} onChange={(e) => setQaSell(e.target.value)}
-                      inputMode="numeric" enterKeyHint="next" dir="ltr" placeholder="350" />
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label={t(L, "pCat")} id="qa-cat">
+                    <Input id="qa-cat" value={qaCat} onChange={(e) => setQaCat(e.target.value)}
+                      list="qa-cats" autoComplete="off" enterKeyHint="next" placeholder={cat !== "all" ? cat : "عام"} />
+                    <datalist id="qa-cats">
+                      {cats.filter((c) => c !== "all").map((c) => <option key={c} value={c} />)}
+                    </datalist>
                   </Field>
-                  <Field label={t(L, "pBuy")} id="qa-buy">
-                    <Input id="qa-buy" value={qaBuy} onChange={(e) => setQaBuy(e.target.value)}
-                      inputMode="numeric" enterKeyHint="next" dir="ltr" placeholder="200" />
-                  </Field>
-                  <Field label={t(L, "pQty")} id="qa-qty">
-                    <Input id="qa-qty" value={qaQty} onChange={(e) => setQaQty(e.target.value)}
-                      inputMode="numeric" enterKeyHint="next" dir="ltr" />
+                  <Field label={t(L, "qaPrice")} id="qa-price">
+                    <Input id="qa-price" value={qaPrice} onChange={(e) => setQaPrice(e.target.value)}
+                      inputMode="numeric" enterKeyHint="done" dir="ltr" placeholder="350" />
                   </Field>
                 </div>
-                <Field label={t(L, "pCat")} id="qa-cat">
-                  <Input id="qa-cat" value={qaCat} onChange={(e) => setQaCat(e.target.value)}
-                    list="qa-cats" autoComplete="off" enterKeyHint="done" placeholder={cat !== "all" ? cat : "عام"} />
-                  <datalist id="qa-cats">
-                    {cats.filter((c) => c !== "all").map((c) => <option key={c} value={c} />)}
-                  </datalist>
-                </Field>
+                <ImagePicker value={qaImg} onChange={setQaImg} />
                 {qaErr && <p role="alert" className="pop-in rounded-[10px] bg-ember/10 px-3 py-2.5 text-sm font-bold text-ember">{qaErr}</p>}
                 <Button type="submit" size="lg" loading={qaBusy}>{t(L, "add")}</Button>
               </form>

@@ -1,6 +1,7 @@
 import { createRoot, type Root } from "react-dom/client";
 import QRCode from "react-qr-code";
 import { fmtDzd, type Order } from "./store";
+import { uploadUrl } from "./api";
 import { t, type Lang } from "./i18n";
 
 // ─── طباعة احترافية ───
@@ -42,20 +43,33 @@ export function printDoc(title: string, dir: "rtl" | "ltr", node: React.ReactNod
 const payLabel = (pay: Order["pay"], lang: Lang) =>
   pay === "cash" ? t(lang, "cash") : pay === "card" ? t(lang, "card") : t(lang, "credit");
 
-function DocHead({ shop, title, lines }: { shop: string; title: string; lines: string[] }) {
+export interface ShopInfo { name: string; phone: string; address: string; logo: string | null }
+
+// بيانات التاجر من الحالة للوثائق المطبوعة (شعار برابط كامل).
+export function shopOf(s: { businessName: string; shopPhone: string; shopAddress: string; shopLogo: string }): ShopInfo {
+  return { name: s.businessName, phone: s.shopPhone, address: s.shopAddress, logo: uploadUrl(s.shopLogo) };
+}
+
+function DocHead({ shop, title, lines }: { shop: ShopInfo; title: string; lines: string[] }) {
   return (
     <div className="p-head">
-      <div>
-        <div className="p-shop">{shop}</div>
-        {lines.map((l, i) => <div key={i} className="p-meta">{l}</div>)}
+      <div className="p-shop-block">
+        {shop.logo && <img src={shop.logo} alt="" className="p-logo" />}
+        <div>
+          <div className="p-shop">{shop.name}</div>
+          {[shop.address, shop.phone].filter(Boolean).join(" · ") && (
+            <div className="p-meta">{[shop.address, shop.phone].filter(Boolean).join(" · ")}</div>
+          )}
+          {lines.map((l, i) => <div key={i} className="p-meta">{l}</div>)}
+        </div>
       </div>
       <div className="p-title">{title}</div>
     </div>
   );
 }
 
-// ─── فاتورة بيع ───
-export function InvoiceDoc({ shop, lang, order }: { shop: string; lang: Lang; order: Order }) {
+// ─── فاتورة بيع: ترويسة ديناميكية من بيانات التاجر + تفاصيل الطلب الحقيقية ───
+export function InvoiceDoc({ shop, lang, order, customer }: { shop: ShopInfo; lang: Lang; order: Order; customer?: string }) {
   const at = new Date(order.at).toLocaleString(lang === "ar" ? "ar-DZ" : "fr-DZ");
   return (
     <>
@@ -68,6 +82,7 @@ export function InvoiceDoc({ shop, lang, order }: { shop: string; lang: Lang; or
           [order.table ? `${t(lang, "tableN")} ${order.table}` : "",
             order.kind === "dinein" ? t(lang, "kindDinein") : order.kind === "takeaway" ? t(lang, "kindTakeaway") : t(lang, "kindDelivery"),
             payLabel(order.pay, lang)].filter(Boolean).join(" · "),
+          ...(customer ? [`${t(lang, "invCustomer")}: ${customer}`] : []),
         ]}
       />
       <table className="p-tab">
@@ -110,7 +125,7 @@ export function InvoiceDoc({ shop, lang, order }: { shop: string; lang: Lang; or
 
 // ─── تقرير فترة ───
 export interface ReportDocData {
-  shop: string; lang: Lang; title: string; period: string;
+  shop: ShopInfo; lang: Lang; title: string; period: string;
   kpis: { label: string; value: string }[];
   pnl: { label: string; value: string; neg?: boolean; bold?: boolean }[];
   methods: { label: string; value: string }[];

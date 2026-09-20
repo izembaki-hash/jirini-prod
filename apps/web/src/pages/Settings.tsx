@@ -5,6 +5,7 @@ import { useStore, type PlanId, fmtDzd } from "../store";
 import { API_BASE, ApiError, api } from "../api";
 import { useAuth, connected } from "../auth";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Field, Input } from "../ui";
+import { ImagePicker } from "../components/ImagePicker";
 import { btSupported, btSavedName, btForget, btTestPrint, btPair, btPrefs, btSavePrefs, btErrorMessage } from "../lib/btprinter";
 import { t, type TKey } from "../i18n";
 
@@ -62,6 +63,8 @@ export default function Settings() {
       </Card>
 
       {s.businessType === "restaurant" && <div id="sec-tables" className="contents scroll-mt-20"><TablesCard /></div>}
+
+      <div id="sec-merch" className="contents scroll-mt-20"><MerchantCard /></div>
 
       <div id="sec-oh" className="contents scroll-mt-20"><OverheadsCard /></div>
 
@@ -343,6 +346,55 @@ function TablesCard() {
           <button className="grid size-11 place-items-center rounded-[10px] border border-line text-xl font-bold" onClick={() => save(s.tables + 1)} aria-label="+">+</button>
         </div>
         <p className="text-xs text-muted">{t(L, "tablesH")}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function MerchantCard() {
+  const { s, update } = useStore();
+  const L = s.lang;
+  const [name, setName] = useState(s.businessName);
+  const [phone, setPhone] = useState(s.shopPhone);
+  const [address, setAddress] = useState(s.shopAddress);
+  const [busy, setBusy] = useState(false);
+
+  const save = async (ev: React.FormEvent) => {
+    ev.preventDefault();
+    if (!name.trim()) return;
+    setBusy(true);
+    update((p) => ({ ...p, businessName: name.trim(), shopPhone: phone.trim(), shopAddress: address.trim() }));
+    if (connected()) {
+      try {
+        await api.tenantPatch({ name: name.trim(), phone: phone.trim(), address: address.trim() });
+        toast.success(t(L, "merchSaved"));
+      } catch { toast.error(t(L, "errSaving")); }
+    } else {
+      toast.success(t(L, "merchSaved"));
+    }
+    setBusy(false);
+  };
+
+  const saveLogo = async (url: string | null) => {
+    update((p) => ({ ...p, shopLogo: url ?? "" }));
+    if (connected()) {
+      try { await api.tenantPatch({ logoUrl: url ?? "" }); }
+      catch { toast.error(t(L, "errSaving")); }
+    }
+  };
+
+  return (
+    <Card><CardHeader><CardTitle>{t(L, "merchT")}</CardTitle></CardHeader>
+      <CardContent>
+        <form onSubmit={save} className="flex flex-col gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label={t(L, "shopNameLb")} id="mn"><Input id="mn" value={name} onChange={(e) => setName(e.target.value)} autoComplete="organization" /></Field>
+            <Field label={t(L, "shopPhoneLb")} id="mp"><Input id="mp" value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" dir="ltr" /></Field>
+          </div>
+          <Field label={t(L, "shopAddrLb")} id="ma"><Input id="ma" value={address} onChange={(e) => setAddress(e.target.value)} autoComplete="street-address" /></Field>
+          <ImagePicker value={s.shopLogo || null} onChange={(u) => void saveLogo(u)} label={t(L, "shopLogoLb")} />
+          <Button type="submit" loading={busy} className="sm:w-fit">{t(L, "saveB")}</Button>
+        </form>
       </CardContent>
     </Card>
   );

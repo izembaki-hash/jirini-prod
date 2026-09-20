@@ -9,7 +9,7 @@ export type Role = "owner" | "manager" | "cashier" | "cook";
 export interface Product {
   id: string; name: string; nameFr: string; buy: number; sell: number;
   qty: number; min: number; barcode?: string; cat: string; shelf?: string; expiry?: string; wholesale?: number; active: boolean;
-  saleable?: boolean;
+  saleable?: boolean; img?: string;
 }
 export interface OrderLine { productId: string; name: string; qty: number; price: number }
 export type OrderStatus = "pending" | "preparing" | "ready" | "onway" | "delivered" | "cancelled";
@@ -19,7 +19,8 @@ export interface Order {
   at: string; total: number; num: number; driverId?: string | null; driverName?: string;
 }
 export interface Shift { id: string; by: string; openedAt: string; closedAt: string | null; opening: number; closing: number | null; note: string }
-export interface Employee { id: string; name: string; role: Role; rate: number; hired: string }
+export interface Employee { id: string; name: string; role: Role; hired: string; half: number; title?: string }
+export interface Advance { id: string; emp: string; amount: number; date: string; note?: string }
 export type AttStatus = "full" | "half" | "absent";
 export interface Att { id: string; emp: string; date: string; status: AttStatus }
 export interface Customer { id: string; name: string; phone: string; address?: string; balance?: number }
@@ -27,7 +28,7 @@ export interface Goal { id: string; title: string; target: number; saved: number
 export interface RecipeItem { id: string; dishId: string; ingredientId: string; qty: number }
 export interface Supplier { id: string; name: string; phone: string; address?: string; notes?: string; active: boolean; openingDebt?: number; owed?: number; paid?: number; balance?: number }
 export interface PurchaseLine { productId: string; name: string; qty: number; unitCost: number }
-export interface Purchase { id: string; num: number; supplierId: string; lines: PurchaseLine[]; total: number; paid: number; status: string; date: string; notes?: string }
+export interface Purchase { id: string; num: number; supplierId: string | null; lines: PurchaseLine[]; total: number; paid: number; status: string; date: string; notes?: string }
 export interface AlertItem { id: string; kind: string; refId: string | null; message: string; read: boolean }
 export interface Driver { id: string; name: string; phone: string; vehicle?: string; kind: "internal" | "external"; active: boolean }
 export interface Overhead { id: string; name: string; kind: string; monthly: number; active: boolean; notes?: string }
@@ -35,10 +36,7 @@ export interface Overhead { id: string; name: string; kind: string; monthly: num
 // حصة اليوم من مصروف شهري (÷30) — نفس اتفاقية الخادم.
 export const dailySlice = (monthly: number) => Math.round((monthly / 30) * 100) / 100;
 
-// ساعات اليوم الكامل — تطابق الخادم (math.ts): الجزئي = النصف، الغياب = صفر.
-export const FULL_DAY_HOURS = 8;
-
-// أجور يوم/فترة من سجلات الحضور اليومية (نفس صيغة الخادم).
+// الأجور على أساس الدوام الجزئي (نفس صيغة الخادم): الكامل = الجزئي × 2، الغياب = صفر.
 export function laborFor(
   att: Att[], employees: Employee[], date?: string,
 ): number {
@@ -47,8 +45,8 @@ export function laborFor(
     if (date && a.date !== date) continue;
     const e = employees.find((x) => x.id === a.emp);
     if (!e) continue;
-    if (a.status === "full") total += FULL_DAY_HOURS * e.rate;
-    else if (a.status === "half") total += (FULL_DAY_HOURS / 2) * e.rate;
+    if (a.status === "full") total += e.half * 2;
+    else if (a.status === "half") total += e.half;
   }
   return Math.round(total);
 }
@@ -78,6 +76,9 @@ interface State {
   booted: boolean;
   businessType: BusinessType;
   businessName: string;
+  shopPhone: string;
+  shopAddress: string;
+  shopLogo: string;
   plan: PlanId;
   lang: Lang;
   role: Role;
@@ -91,6 +92,7 @@ interface State {
   shifts: Shift[];
   employees: Employee[];
   att: Att[];
+  advances: Advance[];
   customers: Customer[];
   goals: Goal[];
   recipes: RecipeItem[];
@@ -163,6 +165,7 @@ function initial(type: BusinessType): State {
     booted: false,
     businessType: type,
     businessName: type === "restaurant" ? "مطعم الدار" : "سوبرماركت النور",
+    shopPhone: "0550 00 00 00", shopAddress: "الجزائر العاصمة", shopLogo: "",
     plan: "pro", lang: "ar", role: "owner",
     crmOn: true,
     branch: "الفرع الرئيسي", branches: ["الفرع الرئيسي"], tables: 4,
@@ -170,10 +173,11 @@ function initial(type: BusinessType): State {
     shift: { id: "sh1", by: "أمين (كاشير)", openedAt: new Date(Date.now() - 4 * 3_600_000).toISOString(), closedAt: null, opening: 10000, closing: null, note: "" },
     shifts: [],
     employees: [
-      { id: "e1", name: "أمين بن علي", role: "cashier", rate: 300, hired: "2024-03-01" },
-      { id: "e2", name: "يوسف حمدي", role: "cook", rate: 350, hired: "2024-06-15" },
+      { id: "e1", name: "أمين بن علي", role: "cashier", title: "كاشير", half: 1200, hired: "2024-03-01" },
+      { id: "e2", name: "يوسف حمدي", role: "cook", title: "طباخ", half: 1400, hired: "2024-06-15" },
     ],
     att: [{ id: "a1", emp: "e1", date: new Date().toISOString().slice(0, 10), status: "full" }],
+    advances: [{ id: "ad1", emp: "e1", amount: 2000, date: new Date().toISOString().slice(0, 10), note: "سلفة" }],
     customers: [{ id: "c1", name: "زبون وفِي", phone: "0550 12 34 56", address: "باب الزوار" }],
     goals: [{ id: "g1", title: "فتح فرع جديد", target: 1500000, saved: 420000, monthly: 120000 }],
     recipes, suppliers, purchases, alerts: [],
@@ -211,6 +215,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             suppliers: Array.isArray(p.suppliers) ? p.suppliers : [],
             purchases: Array.isArray(p.purchases) ? p.purchases : [],
             alerts: Array.isArray(p.alerts) ? p.alerts : [],
+            advances: Array.isArray(p.advances) ? p.advances : [],
+            shopPhone: typeof p.shopPhone === "string" ? p.shopPhone : "",
+            shopAddress: typeof p.shopAddress === "string" ? p.shopAddress : "",
+            shopLogo: typeof p.shopLogo === "string" ? p.shopLogo : "",
+            // هجرة الشكل القديم (أجر الساعة) إلى أجر الجزئي
+            employees: Array.isArray(p.employees) ? p.employees.map((e) => ({
+              ...e,
+              half: typeof (e as { half?: unknown }).half === "number"
+                ? (e as unknown as Employee).half
+                : ((e as unknown as { rate?: number }).rate ?? 0) * 4,
+            })) : [],
           } as State;
         }
       } catch { /* تجاهل */ }

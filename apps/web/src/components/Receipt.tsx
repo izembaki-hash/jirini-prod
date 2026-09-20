@@ -7,6 +7,7 @@ export function Receipt({ order, shop, lang = "ar" }: { order: Order; shop: stri
     <div className="rounded-2xl border border-line bg-surface p-5 text-sm" dir={lang === "ar" ? "rtl" : "ltr"}>
       <p className="text-center font-bold">{shop}</p>
       <p className="tnum text-center font-mono text-xs text-muted">{t(lang, "invTitle")} #{order.num} · {new Date(order.at).toLocaleString("fr-DZ")}</p>
+      {order.customer && <p className="mt-1 text-center text-xs font-bold">{t(lang, "invCustomer")}: {order.customer}</p>}
       <div className="my-3 h-px bg-line" />
       {order.lines.map((l, i) => (
         <div key={i} className="flex justify-between py-0.5">

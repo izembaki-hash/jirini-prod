@@ -131,10 +131,26 @@ model Employee {
   branchId   String   @map("branch_id")
   name       String
   role       String
+  title      String?
   hiredAt    DateTime @default(now())
   hourlyRate Float
+  halfWage   Float    @default(0) @map("half_wage")
   attendance Attendance[]
+  advances   SalaryAdvance[]
   @@index([tenantId])
+}
+
+// سلف/خصومات الموظفين من الراتب (تُطرح من الإجمالي = الصافي).
+model SalaryAdvance {
+  id         String   @id @default(cuid())
+  tenantId   String   @map("tenant_id")
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  employeeId String   @map("employee_id")
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  amount     Float
+  date       String
+  note       String?
+  @@index([tenantId, employeeId, date])
 }
 
 // الاشتراكات: trialing (تسجيل ذاتي 30 يوم) → active → past_due → suspended.
@@ -270,8 +286,8 @@ model Purchase {
   num        Int
   tenantId   String  @map("tenant_id")
   tenant     Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  supplierId String  @map("supplier_id")
-  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  supplierId String? @map("supplier_id")
+  supplier   Supplier? @relation(fields: [supplierId], references: [id], onDelete: Restrict)
   lines      Json
   total      Float
   paid       Float   @default(0)

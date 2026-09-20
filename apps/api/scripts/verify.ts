@@ -3,6 +3,7 @@
 process.env.JWT_SECRET ??= "verify-secret-local-only-0123456789abcdef";
 process.env.OPERATOR_KEY ??= "verify-operator-key";
 process.env.SOFIZPAY_ACCOUNT ??= "GTEST";
+process.env.RATE_LIMIT_SENSITIVE ??= "1000";
 import { buildApp } from "../src/app.js";
 import { MemoryAdapter } from "../src/db.js";
 import { hashPassword } from "../src/auth.js";
@@ -24,8 +25,8 @@ async function main() {
   });
   const branch = await db.createBranch({ tenantId: tenant.id, name: "Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠ", address: "" });
   const emp = await db.createEmployee({
-    tenantId: tenant.id, branchId: branch.id, name: "Ø§Ù„Ù…Ø§Ù„Ùƒ", role: "owner",
-    hiredAt: "2024-01-01", hourlyRate: 0,
+    tenantId: tenant.id, branchId: branch.id, name: "Ø§Ù„Ù…Ø§Ù„Ùƒ", role: "owner", title: null,
+    hiredAt: "2024-01-01", hourlyRate: 0, halfWage: 0,
   });
   await db.createUser({
     tenantId: tenant.id, employeeId: emp.id, name: "Ø§Ù„Ù…Ø§Ù„Ùƒ", phone: "0550000000",
@@ -59,7 +60,7 @@ async function main() {
   ok("login ok (phone normalized)", r.status === 200 && typeof r.json.token === "string");
   const ownerTok = r.json.token as string;
 
-  r = await call("POST", "/auth/users", { name: "Ø£Ù…ÙŠÙ†", phone: "0550111111", password: "cashier1", role: "cashier", hourlyRate: 300, branchId: branch.id }, ownerTok);
+  r = await call("POST", "/auth/users", { name: "Ø£Ù…ÙŠÙ†", phone: "0550111111", password: "cashier1", role: "cashier", title: "ÙƒØ§Ø´ÙŠØ±", halfWage: 1200, branchId: branch.id }, ownerTok);
   ok("create cashier", r.status === 201);
   r = await call("POST", "/auth/login", { slug: "demo-resto", phone: "0550111111", password: "cashier1" });
   const cashTok = r.json.token as string;
@@ -369,6 +370,9 @@ async function main() {
   ok("mark half upsert", r.status === 201 && (r.json as { status: string }).status === "half");
   r = await call("GET", "/salaries", undefined, ownerTok2);
   ok("salaries computed", r.status === 200 && Array.isArray(r.json));
+  // تعديل موظف (مسمى + أجر الجزئي) — بلا تحديد معدل
+  r = await call("PATCH", `/employees/${emp.id}`, { title: "Ù…Ø´Ø±Ù", halfWage: 1500 }, ownerTok2);
+  ok("employee patch", r.status === 200 && (r.json as { halfWage: number }).halfWage === 1500);
 
   // â”€â”€â”€ Ø¹Ø²Ù„ Ø§Ù„ÙØ±ÙˆØ¹: Ù…Ø¯ÙŠØ±/ÙƒØ§Ø´ÙŠØ± ÙØ±Ø¹ Ù„Ø§ ÙŠÙƒØªØ¨ Ø®Ø§Ø±Ø¬ ÙØ±Ø¹Ù‡ â”€â”€â”€
   // (ÙØ±Ø¹ 2 Ø£ÙÙ†Ø´Ø¦ ÙÙŠ Ø§Ø®ØªØ¨Ø§Ø± Ø³Ø§Ø¨Ù‚ â€” Ù†Ø¹ÙŠØ¯ Ø§Ø³ØªØ®Ø¯Ø§Ù…Ù‡)
@@ -488,6 +492,24 @@ async function main() {
   ok("return-status unknown â†’ 404", r.status === 404);
   r = await call("POST", "/billing/sofizpay/initiate", { months: 1, email: "not-an-email" }, ownerTok2);
   ok("initiate bad email â†’ 400", r.status === 400);
+
+  // اختبارات ما بعد حد المعدل (حساسة — في النهاية لتفادي 429):
+  // اقتناء شخصي + صنف يدوي: دفع كامل فوراً، بلا مخزون ولا مورد
+  r = await call("POST", "/purchases", {
+    supplierId: null, lines: [{ productId: p1.id, qty: 2, unitCost: 200 }, { name: "Ø£ÙƒÙŠØ§Ø³", qty: 5, unitCost: 50 }], paid: 650, method: "cash",
+  }, ownerTok2);
+  const per = r.json as { id: string; total: number; paid: number; status: string; supplierId: null };
+  ok("personal purchase paid", r.status === 201 && per.total === 650 && per.status === "paid" && per.supplierId === null);
+  r = await call("POST", "/purchases", { supplierId: null, lines: [{ name: "x", qty: 1, unitCost: 10 }], paid: 0 }, ownerTok2);
+  ok("personal unpaid â†’ 400", r.status === 400);
+  // سلف الموظفين: إنشاء + سرد + حذف
+  r = await call("POST", "/salary-advances", { employeeId: emp.id, amount: 5000, note: "Ø³Ù„ÙØ©" }, ownerTok2);
+  ok("advance create", r.status === 201);
+  const advId = (r.json as { id: string }).id;
+  r = await call("GET", "/salary-advances", undefined, ownerTok2);
+  ok("advances listed", r.status === 200 && ((r.json as unknown[]) as { id: string }[]).some((a) => a.id === advId));
+  r = await call("DELETE", `/salary-advances/${advId}`, undefined, ownerTok2);
+  ok("advance delete", r.status === 200);
 
   server.close();
   console.log(failures === 0 ? "ALL GREEN" : `${failures} FAILURES`);

@@ -10,6 +10,13 @@ export function setToken(t: string | null) {
   try { t ? localStorage.setItem("dz-token", t) : localStorage.removeItem("dz-token"); } catch { /* تجاهل */ }
 }
 
+// رابط صورة كامل: المسارات النسبية (/uploads) تُبنى على أصل الـAPI، والباقي كما هو.
+export function uploadUrl(u?: string | null): string | null {
+  if (!u) return null;
+  if (/^(https?:|data:|blob:)/.test(u)) return u;
+  return `${API_BASE}${u.startsWith("/") ? u : `/${u}`}`;
+}
+
 export class ApiError extends Error {
   status: number;
   code: string;
@@ -41,6 +48,7 @@ export interface ApiProduct {
   id: string; name: string; nameFr: string | null; buyPrice: number; sellPrice: number;
   qty: number; minQty: number; barcode: string | null; category: string | null; active: boolean;
   saleable?: boolean | null; shelf?: string | null; expiryDate?: string | null; wholesalePrice?: number | null;
+  imageUrl?: string | null;
 }
 
 export interface ApiRecipeItem { id: string; dishId: string; ingredientId: string; qty: number }
@@ -50,13 +58,14 @@ export interface ApiSupplier {
 }
 export interface ApiPurchaseLine { productId: string; name: string; qty: number; unitCost: number }
 export interface ApiPurchase {
-  id: string; num: number; supplierId: string; lines: ApiPurchaseLine[];
+  id: string; num: number; supplierId: string | null; lines: ApiPurchaseLine[];
   total: number; paid: number; status: string; date: string; notes: string | null;
 }
 export interface ApiAlert { id: string; kind: string; refId: string | null; message: string; read: boolean }
 export interface ApiOverhead { id: string; name: string; kind: string; monthly: number; active: boolean; notes: string | null }
 
-export interface ApiEmployee { id: string; name: string; role: string; hourlyRate: number; hiredAt: string; branchId: string }
+export interface ApiEmployee { id: string; name: string; role: string; title?: string | null; hourlyRate: number; halfWage?: number; hiredAt: string; branchId: string }
+export interface ApiAdvance { id: string; employeeId: string; amount: number; date: string; note: string | null }
 export interface ApiShift { id: string; branchId: string; cashierId: string; openedAt: string; closedAt: string | null; openingCash: number; closingCash: number | null; note: string }
 export interface ApiAtt { id: string; employeeId: string; date: string; status: "full" | "half" | "absent" }
 export interface ApiCustomer { id: string; name: string; phone: string; address: string | null; balance: number }
@@ -72,7 +81,7 @@ export const api = {
   changePassword: (current: string, next: string) =>
     req<{ ok: boolean }>("/auth/change-password", { method: "POST", body: JSON.stringify({ current, next }) }),
   tenantInfo: () => req<{
-    tenant: { id: string; name: string; type: string; plan: string; lang: string; tablesCount?: number };
+    tenant: { id: string; name: string; type: string; plan: string; lang: string; tablesCount?: number; phone?: string | null; address?: string | null; logoUrl?: string | null };
     branches: { id: string; name: string; address: string }[];
   }>("/tenant"),
   tenantPatch: (patch: Record<string, unknown>) =>
@@ -108,7 +117,7 @@ export const api = {
   listSuppliers: () => req<ApiSupplier[]>("/suppliers"),
   createSupplier: (s: { name: string; phone: string; address?: string; notes?: string; openingDebt?: number }) =>
     req<ApiSupplier>("/suppliers", { method: "POST", body: JSON.stringify(s) }),
-  createPurchase: (p: { supplierId: string; lines: { productId: string; qty: number; unitCost: number }[]; paid?: number; method?: string; ref?: string; notes?: string }) =>
+  createPurchase: (p: { supplierId: string | null; lines: { productId?: string; name?: string; qty: number; unitCost: number }[]; paid?: number; method?: string; ref?: string; notes?: string }) =>
     req<ApiPurchase>("/purchases", { method: "POST", body: JSON.stringify(p) }),
   listPurchases: (supplierId?: string) => req<ApiPurchase[]>(`/purchases${supplierId ? `?supplier=${supplierId}` : ""}`),
   payPurchase: (id: string, amount: number, method = "cash", ref?: string) =>
@@ -143,8 +152,27 @@ export const api = {
     req<{ ok: boolean; slug: string }>(`/public/set-password`, { method: "POST", body: JSON.stringify({ paymentId, password }) }, false),
   // ورديات وحضور ورواتب وموظفون
   employees: () => req<ApiEmployee[]>("/employees"),
-  createEmployeeAccount: (e: { name: string; phone: string; password: string; role: string; hourlyRate?: number; branchId?: string }) =>
+  createEmployeeAccount: (e: { name: string; phone: string; password: string; role: string; title?: string; halfWage?: number; branchId?: string }) =>
     req<{ id: string; employeeId: string }>("/auth/users", { method: "POST", body: JSON.stringify(e) }),
+  updateEmployee: (id: string, patch: { name?: string; title?: string | null; halfWage?: number }) =>
+    req<ApiEmployee>(`/employees/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  advancesList: () => req<ApiAdvance[]>("/salary-advances"),
+  advanceCreate: (a: { employeeId: string; amount: number; note?: string }) =>
+    req<ApiAdvance>("/salary-advances", { method: "POST", body: JSON.stringify(a) }),
+  advanceDelete: (id: string) => req<{ ok: boolean }>(`/salary-advances/${id}`, { method: "DELETE" }),
+  upload: async (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    const headers: Record<string, string> = {};
+    const t = getToken();
+    if (t) headers.Authorization = `Bearer ${t}`;
+    const r = await fetch(`${API_BASE}/upload`, { method: "POST", headers, body: fd });
+    const ctype = r.headers.get("content-type") ?? "";
+    if (ctype.includes("text/html")) throw new ApiError(502, "bad_gateway");
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new ApiError(r.status, (body as { error?: string }).error ?? "internal");
+    return body as { url: string };
+  },
   shiftOpenInfo: () => req<ApiShift | null>("/shifts/open"),
   shiftOpen: (branchId: string, openingCash: number, cashierId: string) =>
     req<ApiShift>("/shifts/open", { method: "POST", body: JSON.stringify({ branchId, openingCash, cashierId }) }),

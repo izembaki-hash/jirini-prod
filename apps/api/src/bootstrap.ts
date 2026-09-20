@@ -16,8 +16,8 @@ export async function maybeSeed(external?: DbPort) {
   });
   const branch = await db.createBranch({ tenantId: tenant.id, name: "الفرع الرئيسي", address: "الجزائر العاصمة" });
   const emp = await db.createEmployee({
-    tenantId: tenant.id, branchId: branch.id, name: "المالك", role: "owner",
-    hiredAt: new Date().toISOString().slice(0, 10), hourlyRate: 0,
+    tenantId: tenant.id, branchId: branch.id, name: "المالك", role: "owner", title: null,
+    hiredAt: new Date().toISOString().slice(0, 10), hourlyRate: 0, halfWage: 0,
   });
   await db.createUser({
     tenantId: tenant.id, employeeId: emp.id, name: "المالك", phone: "0550000000",
