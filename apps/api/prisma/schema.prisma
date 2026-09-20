@@ -26,6 +26,7 @@ model Tenant {
   products        Product[]
   orders          Order[]
   employees       Employee[]
+  advances        SalaryAdvance[]
   shifts          Shift[]
   customers       Customer[]
   goals           Goal[]
