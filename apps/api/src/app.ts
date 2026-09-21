@@ -9,7 +9,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { z } from "zod";
 import { createDb, type ConsumedRow, type DbPort, type OrderLineRow, type OrderRow } from "./db.js";
-import { checkPassword, hashPassword, requireAuth, requireRole, signToken } from "./auth.js";
+import { checkPassword, hashPassword, requireAuth, requireRole, requirePage, effectivePages, APP_PAGES, signToken } from "./auth.js";
 import { orderTotal, profitOf, salaryFor, algiersDay, profitBreakdown, dailySlice, PLAN_LIMITS } from "./math.js";
 import { createTransaction as sofizCreate, checkTransaction as sofizCheck, isPaid as sofizIsPaid } from "./sofizpay.js";
 
@@ -24,7 +24,11 @@ const NEXT: Record<string, string[]> = {
 };
 
 // ─── مخططات التحقق ───
-const zLogin = z.object({ slug: z.string().min(1), phone: z.string().min(9), password: z.string().min(4) });
+  const zLogin = z.object({
+    slug: z.string().min(1),
+    phone: z.string().min(9).optional(), password: z.string().min(4).optional(),
+    pin: z.string().regex(/^\d{4,8}$/).optional(),
+  });
 const zProduct = z.object({
   name: z.string().min(1), nameFr: z.string().optional(), branchId: z.string().min(1),
   buyPrice: z.number().min(0), sellPrice: z.number().min(0), qty: z.number().min(0),
@@ -172,7 +176,7 @@ export async function buildApp(db?: DbPort) {
       // مستخدم المالك بدون كلمة سر بعد — تُضبط عبر /public/set-password بعد الدفع.
       await dbx.createUser({
         tenantId: tenant.id, employeeId: emp.id, name: b.ownerName, phone: normPhone(b.phone),
-        passwordHash: "", role: "owner", branchId: null, active: true,
+        passwordHash: "", pinHash: null, pages: null, role: "owner", branchId: null, active: true,
       });
       res.status(201).json({ tenantId: tenant.id, slug, ownerPhone: normPhone(b.phone), email: b.email ?? null });
     } catch (e) { next(e); }
@@ -258,12 +262,25 @@ export async function buildApp(db?: DbPort) {
       const b = zLogin.parse(req.body);
       const tenant = await dbx.getTenantBySlug(b.slug.trim());
       if (!tenant) { res.status(401).json({ error: "bad_credentials" }); return; }
-      const user = await dbx.findUserByPhone(tenant.id, normPhone(b.phone));
-      if (!user || !(await checkPassword(b.password, user.passwordHash))) {
-        res.status(401).json({ error: "bad_credentials" }); return;
+      let user = null;
+      if (b.pin) {
+        // دخول بالكود السري: الكود فريد لكل مستأجر، يُقارن مشفّراً
+        const users = await dbx.listUsers(tenant.id);
+        for (const u of users) {
+          if (u.active && u.pinHash && (await checkPassword(b.pin, u.pinHash))) { user = u; break; }
+        }
+        if (!user) { res.status(401).json({ error: "bad_credentials" }); return; }
+      } else {
+        if (!b.phone || !b.password) { res.status(401).json({ error: "bad_credentials" }); return; }
+        const found = await dbx.findUserByPhone(tenant.id, normPhone(b.phone));
+        if (!found || !found.passwordHash || !(await checkPassword(b.password, found.passwordHash))) {
+          res.status(401).json({ error: "bad_credentials" }); return;
+        }
+        user = found;
       }
-      const token = signToken({ uid: user.id, tenant_id: tenant.id, role: user.role, branch_id: user.branchId, name: user.name });
-      res.json({ token, user: { name: user.name, role: user.role, branchId: user.branchId }, tenant: { id: tenant.id, slug: tenant.slug, name: tenant.name, type: tenant.type, plan: tenant.plan, lang: tenant.lang } });
+      const pages = effectivePages(user.role, user.pages);
+      const token = signToken({ uid: user.id, tenant_id: tenant.id, role: user.role, branch_id: user.branchId, name: user.name, pages });
+      res.json({ token, user: { name: user.name, role: user.role, branchId: user.branchId, pages }, tenant: { id: tenant.id, slug: tenant.slug, name: tenant.name, type: tenant.type, plan: tenant.plan, lang: tenant.lang } });
     } catch (e) { next(e); }
   });
 
@@ -274,13 +291,13 @@ export async function buildApp(db?: DbPort) {
     } catch (e) { next(e); }
   });
 
-  app.get("/employees", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
+  app.get("/employees", requireAuth, requireRole("owner", "manager"), requirePage("staff"), async (req, res, next) => {
     try { res.json(await dbx.listEmployees(req.auth!.tenant_id)); }
     catch (e) { next(e); }
   });
 
   // تعديل بيانات موظف (المسمى/الأجر/الاسم) — الصلاحية تبقى من حساب الدخول
-  app.patch("/employees/:id", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
+  app.patch("/employees/:id", requireAuth, requireRole("owner", "manager"), requirePage("staff"), async (req, res, next) => {
     try {
       const b = z.object({
         name: z.string().min(2).optional(), title: z.string().max(60).nullable().optional(),
@@ -295,11 +312,11 @@ export async function buildApp(db?: DbPort) {
   });
 
   // سلف/خصومات الموظفين (تُطرح من إجمالي الأجر = الصافي)
-  app.get("/salary-advances", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
+  app.get("/salary-advances", requireAuth, requireRole("owner", "manager"), requirePage("staff"), async (req, res, next) => {
     try { res.json(await dbx.listAdvances(req.auth!.tenant_id, (req.query.employee as string) || undefined)); }
     catch (e) { next(e); }
   });
-  app.post("/salary-advances", requireAuth, requireRole("owner", "manager"), sensitiveLimit, async (req, res, next) => {
+  app.post("/salary-advances", requireAuth, requireRole("owner", "manager"), requirePage("staff"), sensitiveLimit, async (req, res, next) => {
     try {
       const b = z.object({
         employeeId: z.string().min(1), amount: z.number().positive().max(100000000),
@@ -313,7 +330,7 @@ export async function buildApp(db?: DbPort) {
       }));
     } catch (e) { next(e); }
   });
-  app.delete("/salary-advances/:id", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
+  app.delete("/salary-advances/:id", requireAuth, requireRole("owner", "manager"), requirePage("staff"), async (req, res, next) => {
     try { await dbx.deleteAdvance(req.auth!.tenant_id, req.params.id); res.json({ ok: true }); }
     catch (e) { next(e); }
   });
@@ -332,7 +349,7 @@ export async function buildApp(db?: DbPort) {
   });
 
   // إنشاء حساب موظف (مالك/مدير فرع)
-  app.post("/auth/users", requireAuth, requireRole("owner", "manager"), sensitiveLimit, async (req, res, next) => {
+  app.post("/auth/users", requireAuth, requireRole("owner", "manager"), requirePage("staff"), sensitiveLimit, async (req, res, next) => {
     try {
       const b = zUser.parse(req.body);
       const t = req.auth!.tenant_id;
@@ -345,10 +362,43 @@ export async function buildApp(db?: DbPort) {
       });
       const user = await dbx.createUser({
         tenantId: t, employeeId: emp.id, name: b.name, phone: normPhone(b.phone),
-        passwordHash: await hashPassword(b.password), role: b.role,
+        passwordHash: await hashPassword(b.password), pinHash: null, pages: null, role: b.role,
         branchId: empBranch === "main" ? null : empBranch, active: true,
       });
       res.status(201).json({ id: user.id, employeeId: emp.id });
+    } catch (e) { next(e); }
+  });
+
+  // قائمة حسابات الدخول (لصفحة العمال: ربط كل موظف بحسابه + حالة الكود والصفحات)
+  app.get("/auth/users", requireAuth, requireRole("owner"), async (req, res, next) => {
+    try {
+      const users = await dbx.listUsers(req.auth!.tenant_id);
+      res.json(users.map((u) => ({
+        id: u.id, employeeId: u.employeeId, name: u.name, role: u.role,
+        hasPin: !!u.pinHash, pages: u.pages ?? null, active: u.active,
+      })));
+    } catch (e) { next(e); }
+  });
+
+  // توليد كود سري لعامل (6 أرقام) — يُعرض مرة واحدة ويُخزَّن مشفّراً فقط
+  app.post("/auth/users/:id/pin", requireAuth, requireRole("owner"), sensitiveLimit, async (req, res, next) => {
+    try {
+      const u = await dbx.findUserById(req.auth!.tenant_id, req.params.id);
+      if (!u || u.role === "owner") { res.status(404).json({ error: "not_found" }); return; }
+      const pin = String(Math.floor(100000 + Math.random() * 900000));
+      await dbx.setUserPin(req.auth!.tenant_id, u.id, await hashPassword(pin));
+      res.status(201).json({ pin });
+    } catch (e) { next(e); }
+  });
+
+  // تحديد الصفحات المسموحة لعامل (null = الكل)
+  app.patch("/auth/users/:id/pages", requireAuth, requireRole("owner"), async (req, res, next) => {
+    try {
+      const b = z.object({ pages: z.array(z.enum(APP_PAGES)).nullable() }).parse(req.body);
+      const u = await dbx.findUserById(req.auth!.tenant_id, req.params.id);
+      if (!u || u.role === "owner") { res.status(404).json({ error: "not_found" }); return; }
+      const updated = await dbx.setUserPages(req.auth!.tenant_id, u.id, b.pages);
+      res.json({ id: updated.id, pages: updated.pages ?? null });
     } catch (e) { next(e); }
   });
 
@@ -362,7 +412,7 @@ export async function buildApp(db?: DbPort) {
     } catch (e) { next(e); }
   });
 
-  app.patch("/tenant", requireAuth, requireRole("owner"), async (req, res, next) => {
+  app.patch("/tenant", requireAuth, requireRole("owner"), requirePage("settings"), async (req, res, next) => {
     try {
       const allowed = z.object({
         name: z.string().min(2).optional(), address: z.string().optional(), phone: z.string().optional(),
@@ -375,13 +425,13 @@ export async function buildApp(db?: DbPort) {
   });
 
   // ═══ المنتجات ═══
-  app.get("/products", requireAuth, async (req, res, next) => {
+  app.get("/products", requireAuth, requirePage("pos", "inventory", "kitchen", "orders"), async (req, res, next) => {
     try {
       res.json(await dbx.listProducts(req.auth!.tenant_id, (req.query.branch as string) || branchOf(req)));
     } catch (e) { next(e); }
   });
 
-  app.post("/products", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
+  app.post("/products", requireAuth, requireRole("owner", "manager"), requirePage("inventory"), async (req, res, next) => {
     try {
       const b = zProduct.parse(req.body);
       res.status(201).json(await dbx.createProduct({
@@ -394,7 +444,7 @@ export async function buildApp(db?: DbPort) {
     } catch (e) { next(e); }
   });
 
-  app.patch("/products/:id", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
+  app.patch("/products/:id", requireAuth, requireRole("owner", "manager"), requirePage("inventory"), async (req, res, next) => {
     try {
       const b = z.object({
         name: z.string().min(1).optional(), sellPrice: z.number().min(0).optional(),
@@ -409,7 +459,7 @@ export async function buildApp(db?: DbPort) {
     } catch (e) { next(e); }
   });
 
-  app.post("/products/:id/stock", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
+  app.post("/products/:id/stock", requireAuth, requireRole("owner", "manager"), requirePage("inventory"), async (req, res, next) => {
     try {
       const b = z.object({ delta: z.number().min(-100000).max(100000), reason: z.string().min(1) }).parse(req.body);
       await mustOwnProduct(dbx, req.auth!.tenant_id, branchOf(req), req.params.id);
@@ -417,7 +467,7 @@ export async function buildApp(db?: DbPort) {
     } catch (e) { next(e); }
   });
 
-  app.get("/moves", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
+  app.get("/moves", requireAuth, requireRole("owner", "manager"), requirePage("inventory"), async (req, res, next) => {
     try {
       res.json(await dbx.listMoves(req.auth!.tenant_id, (req.query.product as string) || undefined));
     } catch (e) { next(e); }
@@ -488,7 +538,7 @@ export async function buildApp(db?: DbPort) {
     return { out, map };
   }
 
-  app.get("/orders", requireAuth, async (req, res, next) => {
+  app.get("/orders", requireAuth, requirePage("orders", "kitchen"), async (req, res, next) => {
     try {
       const list = await dbx.listOrders(req.auth!.tenant_id, {
         status: (req.query.status as string) || undefined,
@@ -499,7 +549,7 @@ export async function buildApp(db?: DbPort) {
     } catch (e) { next(e); }
   });
 
-  app.post("/orders", requireAuth, requireRole("owner", "manager", "cashier"), async (req, res, next) => {
+  app.post("/orders", requireAuth, requireRole("owner", "manager", "cashier"), requirePage("pos"), async (req, res, next) => {
     try {
       const b = zOrder.parse(req.body);
       const t = req.auth!.tenant_id;
@@ -545,7 +595,7 @@ export async function buildApp(db?: DbPort) {
     } catch (e) { next(e); }
   });
 
-  app.patch("/orders/:id", requireAuth, requireRole("owner", "manager", "cashier", "cook"), async (req, res, next) => {
+  app.patch("/orders/:id", requireAuth, requireRole("owner", "manager", "cashier", "cook"), requirePage("orders", "kitchen"), async (req, res, next) => {
     try {
       const b = z.object({ status: z.enum(STATUSES) }).parse(req.body);
       const t = req.auth!.tenant_id;
@@ -581,12 +631,12 @@ export async function buildApp(db?: DbPort) {
   });
 
   // ═══ الورديات ═══
-  app.get("/shifts/open", requireAuth, async (req, res, next) => {
+  app.get("/shifts/open", requireAuth, requirePage("shifts"), async (req, res, next) => {
     try { res.json(await dbx.getOpenShift(req.auth!.tenant_id, branchOf(req))); }
     catch (e) { next(e); }
   });
 
-  app.post("/shifts/open", requireAuth, requireRole("owner", "manager", "cashier"), async (req, res, next) => {
+  app.post("/shifts/open", requireAuth, requireRole("owner", "manager", "cashier"), requirePage("shifts"), async (req, res, next) => {
     try {
       const b = zShiftOpen.parse(req.body);
       const t = req.auth!.tenant_id;
@@ -599,7 +649,7 @@ export async function buildApp(db?: DbPort) {
     } catch (e) { next(e); }
   });
 
-  app.post("/shifts/:id/close", requireAuth, requireRole("owner", "manager", "cashier"), async (req, res, next) => {
+  app.post("/shifts/:id/close", requireAuth, requireRole("owner", "manager", "cashier"), requirePage("shifts"), async (req, res, next) => {
     try {
       const b = zShiftClose.parse(req.body);
       const t = req.auth!.tenant_id;
@@ -617,13 +667,13 @@ export async function buildApp(db?: DbPort) {
     } catch (e) { next(e); }
   });
 
-  app.get("/shifts", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
+  app.get("/shifts", requireAuth, requireRole("owner", "manager"), requirePage("shifts"), async (req, res, next) => {
     try { res.json(await dbx.listShifts(req.auth!.tenant_id)); }
     catch (e) { next(e); }
   });
 
   // ═══ الحضور اليومي والرواتب (دوام كامل/جزئي/غياب) ═══
-  app.post("/attendance/mark", requireAuth, requireRole("owner", "manager", "cashier"), async (req, res, next) => {
+  app.post("/attendance/mark", requireAuth, requireRole("owner", "manager", "cashier"), requirePage("staff"), async (req, res, next) => {
     try {
       const b = z.object({
         employeeId: z.string().min(1),
@@ -637,12 +687,12 @@ export async function buildApp(db?: DbPort) {
     } catch (e) { next(e); }
   });
 
-  app.get("/attendance", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
+  app.get("/attendance", requireAuth, requireRole("owner", "manager"), requirePage("staff"), async (req, res, next) => {
     try { res.json(await dbx.listAttendance(req.auth!.tenant_id, (req.query.date as string) || undefined)); }
     catch (e) { next(e); }
   });
 
-  app.get("/salaries", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
+  app.get("/salaries", requireAuth, requireRole("owner", "manager"), requirePage("staff"), async (req, res, next) => {
     try {
       const t = req.auth!.tenant_id;
       const [emps, att] = await Promise.all([dbx.listEmployees(t), dbx.listAttendance(t)]);
@@ -659,11 +709,11 @@ export async function buildApp(db?: DbPort) {
     if (!tenant?.crmEnabled) { res.status(403).json({ error: "crm_disabled" }); return null; }
     return tenant;
   }
-  app.get("/customers", requireAuth, async (req, res, next) => {
+  app.get("/customers", requireAuth, requirePage("customers", "pos"), async (req, res, next) => {
     try { if (!await needCrm(req, res)) return; res.json(await dbx.listCustomers(req.auth!.tenant_id)); }
     catch (e) { next(e); }
   });
-  app.post("/customers", requireAuth, requireRole("owner", "manager", "cashier"), async (req, res, next) => {
+  app.post("/customers", requireAuth, requireRole("owner", "manager", "cashier"), requirePage("customers"), async (req, res, next) => {
     try {
       if (!await needCrm(req, res)) return;
       const b = z.object({ name: z.string().min(1), phone: z.string().min(9), address: z.string().optional() }).parse(req.body);
@@ -671,14 +721,14 @@ export async function buildApp(db?: DbPort) {
     } catch (e) { next(e); }
   });
   // تسديد دين عميل (الكاشير يحصّل)
-  app.post("/customers/:id/pay", requireAuth, requireRole("owner", "manager", "cashier"), async (req, res, next) => {
+  app.post("/customers/:id/pay", requireAuth, requireRole("owner", "manager", "cashier"), requirePage("customers"), async (req, res, next) => {
     try {
       if (!await needCrm(req, res)) return;
       const b = z.object({ amount: z.number().positive(), method: z.string().default("cash"), ref: z.string().optional() }).parse(req.body);
       res.json(await dbx.recordCustomerPayment(req.auth!.tenant_id, req.params.id, b.amount, b.method, b.ref));
     } catch (e) { next(e); }
   });
-  app.get("/customers/:id/payments", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
+  app.get("/customers/:id/payments", requireAuth, requireRole("owner", "manager"), requirePage("customers"), async (req, res, next) => {
     try {
       if (!await needCrm(req, res)) return;
       res.json(await dbx.listCustomerPayments(req.auth!.tenant_id, req.params.id));
@@ -691,25 +741,25 @@ export async function buildApp(db?: DbPort) {
     if (!tenant || !PLAN_LIMITS[tenant.plan]?.growth) { res.status(403).json({ error: "upgrade_needed" }); return null; }
     return tenant;
   }
-  app.get("/goals", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
+  app.get("/goals", requireAuth, requireRole("owner", "manager"), requirePage("growth"), async (req, res, next) => {
     try { if (!await needGrowth(req, res)) return; res.json(await dbx.listGoals(req.auth!.tenant_id)); }
     catch (e) { next(e); }
   });
-  app.post("/goals", requireAuth, requireRole("owner"), async (req, res, next) => {
+  app.post("/goals", requireAuth, requireRole("owner"), requirePage("growth"), async (req, res, next) => {
     try {
       if (!await needGrowth(req, res)) return;
       const b = z.object({ title: z.string().min(1), target: z.number().min(1), monthly: z.number().min(0) }).parse(req.body);
       res.status(201).json(await dbx.createGoal({ tenantId: req.auth!.tenant_id, title: b.title, target: b.target, saved: 0, monthly: b.monthly }));
     } catch (e) { next(e); }
   });
-  app.patch("/goals/:id", requireAuth, requireRole("owner"), async (req, res, next) => {
+  app.patch("/goals/:id", requireAuth, requireRole("owner"), requirePage("growth"), async (req, res, next) => {
     try {
       if (!await needGrowth(req, res)) return;
       const b = z.object({ title: z.string().min(1).optional(), target: z.number().min(1).optional(), saved: z.number().min(0).optional(), monthly: z.number().min(0).optional() }).parse(req.body);
       res.json(await dbx.updateGoal(req.auth!.tenant_id, req.params.id, b));
     } catch (e) { next(e); }
   });
-  app.delete("/goals/:id", requireAuth, requireRole("owner"), async (req, res, next) => {
+  app.delete("/goals/:id", requireAuth, requireRole("owner"), requirePage("growth"), async (req, res, next) => {
     try {
       if (!await needGrowth(req, res)) return;
       await dbx.deleteGoal(req.auth!.tenant_id, req.params.id);
@@ -722,11 +772,11 @@ export async function buildApp(db?: DbPort) {
     name: z.string().min(2), kind: z.enum(["rent", "electricity", "gas", "water", "internet", "other"]).default("other"),
     monthly: z.number().min(0), active: z.boolean().default(true), notes: z.string().optional(),
   });
-  app.get("/overheads", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
+  app.get("/overheads", requireAuth, requireRole("owner", "manager"), requirePage("settings"), async (req, res, next) => {
     try { res.json(await dbx.listOverheads(req.auth!.tenant_id)); }
     catch (e) { next(e); }
   });
-  app.post("/overheads", requireAuth, requireRole("owner"), sensitiveLimit, async (req, res, next) => {
+  app.post("/overheads", requireAuth, requireRole("owner"), requirePage("settings"), sensitiveLimit, async (req, res, next) => {
     try {
       const b = zOverhead.parse(req.body);
       res.status(201).json(await dbx.createOverhead({
@@ -735,13 +785,13 @@ export async function buildApp(db?: DbPort) {
       }));
     } catch (e) { next(e); }
   });
-  app.patch("/overheads/:id", requireAuth, requireRole("owner"), async (req, res, next) => {
+  app.patch("/overheads/:id", requireAuth, requireRole("owner"), requirePage("settings"), async (req, res, next) => {
     try {
       const b = zOverhead.partial().parse(req.body);
       res.json(await dbx.updateOverhead(req.auth!.tenant_id, req.params.id, b));
     } catch (e) { next(e); }
   });
-  app.delete("/overheads/:id", requireAuth, requireRole("owner"), async (req, res, next) => {
+  app.delete("/overheads/:id", requireAuth, requireRole("owner"), requirePage("settings"), async (req, res, next) => {
     try { await dbx.deleteOverhead(req.auth!.tenant_id, req.params.id); res.json({ ok: true }); }
     catch (e) { next(e); }
   });
@@ -751,7 +801,7 @@ export async function buildApp(db?: DbPort) {
     try { res.json(await dbx.listBranches(req.auth!.tenant_id)); }
     catch (e) { next(e); }
   });
-  app.post("/branches", requireAuth, requireRole("owner"), async (req, res, next) => {
+  app.post("/branches", requireAuth, requireRole("owner"), requirePage("branches"), async (req, res, next) => {
     try {
       const t = req.auth!.tenant_id;
       const tenant = await dbx.getTenant(t);
@@ -1100,7 +1150,7 @@ export async function buildApp(db?: DbPort) {
   });
 
   // ═══ التقارير ═══
-  app.get("/reports/summary", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
+  app.get("/reports/summary", requireAuth, requireRole("owner", "manager"), requirePage("reports"), async (req, res, next) => {
     try {
       const t = req.auth!.tenant_id;
       const days = Math.min(90, Math.max(1, Number(req.query.days ?? 7)));
@@ -1163,7 +1213,7 @@ export async function buildApp(db?: DbPort) {
   });
 
   // ═══ الرفع ═══
-  app.post("/upload", requireAuth, requireRole("owner", "manager", "cashier"), sensitiveLimit, upload.single("file"), (req, res) => {
+  app.post("/upload", requireAuth, requireRole("owner", "manager", "cashier"), requirePage("pos", "inventory", "settings"), sensitiveLimit, upload.single("file"), (req, res) => {
     if (!req.file) { res.status(400).json({ error: "no_file" }); return; }
     res.status(201).json({ url: `/uploads/${req.file.filename}` });
   });
@@ -1253,11 +1303,11 @@ export async function buildApp(db?: DbPort) {
   // ═══ الوصفات والمورّدون والمشتريات والهدر والتنبيهات ═══
   const zRecipeLine = z.object({ ingredientId: z.string().min(1), qty: z.number().positive().max(100000) });
 
-  app.get("/recipes", requireAuth, async (req, res, next) => {
+  app.get("/recipes", requireAuth, requirePage("inventory"), async (req, res, next) => {
     try { res.json(await dbx.listRecipes(req.auth!.tenant_id, (req.query.dish as string) || undefined)); }
     catch (e) { next(e); }
   });
-  app.put("/recipes/dish/:dishId", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
+  app.put("/recipes/dish/:dishId", requireAuth, requireRole("owner", "manager"), requirePage("inventory"), async (req, res, next) => {
     try {
       const b = z.object({ lines: z.array(zRecipeLine).max(100) }).parse(req.body);
       const t = req.auth!.tenant_id;
@@ -1270,7 +1320,7 @@ export async function buildApp(db?: DbPort) {
       res.json(await dbx.setDishRecipe(t, req.params.dishId, b.lines));
     } catch (e) { next(e); }
   });
-  app.delete("/recipes/:id", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
+  app.delete("/recipes/:id", requireAuth, requireRole("owner", "manager"), requirePage("inventory"), async (req, res, next) => {
     try { await dbx.deleteRecipeLine(req.auth!.tenant_id, req.params.id); res.json({ ok: true }); }
     catch (e) { next(e); }
   });
@@ -1280,7 +1330,7 @@ export async function buildApp(db?: DbPort) {
     address: z.string().optional(), notes: z.string().optional(), active: z.boolean().default(true),
     openingDebt: z.number().min(0).default(0),
   });
-  app.get("/suppliers", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
+  app.get("/suppliers", requireAuth, requireRole("owner", "manager"), requirePage("inventory"), async (req, res, next) => {
     try {
       const t = req.auth!.tenant_id;
       const [suppliers, purchases] = await Promise.all([dbx.listSuppliers(t), dbx.listPurchases(t)]);
@@ -1292,7 +1342,7 @@ export async function buildApp(db?: DbPort) {
       }));
     } catch (e) { next(e); }
   });
-  app.post("/suppliers", requireAuth, requireRole("owner", "manager"), sensitiveLimit, async (req, res, next) => {
+  app.post("/suppliers", requireAuth, requireRole("owner", "manager"), requirePage("inventory"), sensitiveLimit, async (req, res, next) => {
     try {
       const b = zSupplier.parse(req.body);
       const created = await dbx.createSupplier({
@@ -1304,7 +1354,7 @@ export async function buildApp(db?: DbPort) {
       res.status(201).json({ ...created, owed: open, paid: 0, balance: open });
     } catch (e) { next(e); }
   });
-  app.patch("/suppliers/:id", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
+  app.patch("/suppliers/:id", requireAuth, requireRole("owner", "manager"), requirePage("inventory"), async (req, res, next) => {
     try {
       const b = zSupplier.partial().parse(req.body);
       res.json(await dbx.updateSupplier(req.auth!.tenant_id, req.params.id, b));
@@ -1315,11 +1365,11 @@ export async function buildApp(db?: DbPort) {
     productId: z.string().optional(), name: z.string().max(120).optional(),
     qty: z.number().positive().max(100000), unitCost: z.number().min(0),
   });
-  app.get("/purchases", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
+  app.get("/purchases", requireAuth, requireRole("owner", "manager"), requirePage("inventory"), async (req, res, next) => {
     try { res.json(await dbx.listPurchases(req.auth!.tenant_id, (req.query.supplier as string) || undefined)); }
     catch (e) { next(e); }
   });
-  app.post("/purchases", requireAuth, requireRole("owner", "manager"), sensitiveLimit, async (req, res, next) => {
+  app.post("/purchases", requireAuth, requireRole("owner", "manager"), requirePage("inventory"), sensitiveLimit, async (req, res, next) => {
     try {
       const b = z.object({
         supplierId: z.string().min(1).nullable().optional(), lines: z.array(zPurchaseLine).min(1).max(100),
@@ -1365,7 +1415,7 @@ export async function buildApp(db?: DbPort) {
       res.status(201).json(full ?? created);
     } catch (e) { next(e); }
   });
-  app.post("/purchases/:id/pay", requireAuth, requireRole("owner", "manager"), sensitiveLimit, async (req, res, next) => {
+  app.post("/purchases/:id/pay", requireAuth, requireRole("owner", "manager"), requirePage("inventory"), sensitiveLimit, async (req, res, next) => {
     try {
       const b = z.object({ amount: z.number().positive(), method: z.string().default("cash"), ref: z.string().optional() }).parse(req.body);
       res.json(await dbx.payPurchase(req.auth!.tenant_id, req.params.id, b.amount, b.method, b.ref));
@@ -1373,7 +1423,7 @@ export async function buildApp(db?: DbPort) {
   });
 
   // تسجيل هدر/تلف: خصم من المخزون بسبب موثّق + تنبيه عبور الحد تلقائياً
-  app.post("/wastage", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
+  app.post("/wastage", requireAuth, requireRole("owner", "manager"), requirePage("inventory"), async (req, res, next) => {
     try {
       const b = z.object({
         productId: z.string().min(1), qty: z.number().positive().max(100000), reason: z.string().default(""),
@@ -1388,21 +1438,21 @@ export async function buildApp(db?: DbPort) {
     } catch (e) { next(e); }
   });
 
-  app.get("/alerts", requireAuth, async (req, res, next) => {
+  app.get("/alerts", requireAuth, requirePage("inventory"), async (req, res, next) => {
     try { res.json(await dbx.listAlerts(req.auth!.tenant_id, req.query.unread === "1")); }
     catch (e) { next(e); }
   });
-  app.post("/alerts/:id/read", requireAuth, async (req, res, next) => {
+  app.post("/alerts/:id/read", requireAuth, requirePage("inventory"), async (req, res, next) => {
     try { await dbx.markAlertRead(req.auth!.tenant_id, req.params.id); res.json({ ok: true }); }
     catch (e) { next(e); }
   });
 
   // ═══ السائقون (داخليون وخارجيون — بلا دخول) ═══
-  app.get("/drivers", requireAuth, async (req, res, next) => {
+  app.get("/drivers", requireAuth, requirePage("orders"), async (req, res, next) => {
     try { res.json(await dbx.listDrivers(req.auth!.tenant_id)); }
     catch (e) { next(e); }
   });
-  app.post("/drivers", requireAuth, requireRole("owner", "manager"), sensitiveLimit, async (req, res, next) => {
+  app.post("/drivers", requireAuth, requireRole("owner", "manager"), requirePage("orders"), sensitiveLimit, async (req, res, next) => {
     try {
       const b = zDriver.parse(req.body);
       res.status(201).json(await dbx.createDriver({
@@ -1411,14 +1461,14 @@ export async function buildApp(db?: DbPort) {
       }));
     } catch (e) { next(e); }
   });
-  app.patch("/drivers/:id", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
+  app.patch("/drivers/:id", requireAuth, requireRole("owner", "manager"), requirePage("orders"), async (req, res, next) => {
     try {
       const b = zDriver.partial().parse(req.body);
       res.json(await dbx.updateDriver(req.auth!.tenant_id, req.params.id, b));
     } catch (e) { next(e); }
   });
   // إسناد سائق لطلب توصيل (مالك/مدير) — يُبث للمطبخ لحظياً
-  app.patch("/orders/:id/driver", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
+  app.patch("/orders/:id/driver", requireAuth, requireRole("owner", "manager"), requirePage("orders"), async (req, res, next) => {
     try {
       const b = z.object({ driverId: z.string().min(1).nullable() }).parse(req.body);
       const t = req.auth!.tenant_id;
@@ -1430,7 +1480,7 @@ export async function buildApp(db?: DbPort) {
   });
 
   // ═══ SSE للمطبخ (التوكن في الاستعلام لأن EventSource لا يرسل ترويسات) ═══
-  app.get("/stream/kitchen", requireAuth, (req, res) => {
+  app.get("/stream/kitchen", requireAuth, requirePage("kitchen"), (req, res) => {
     const t = req.auth!.tenant_id;
     res.writeHead(200, {
       "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive",

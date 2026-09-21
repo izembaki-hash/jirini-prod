@@ -21,7 +21,8 @@ export async function maybeSeed(external?: DbPort) {
   });
   await db.createUser({
     tenantId: tenant.id, employeeId: emp.id, name: "المالك", phone: "0550000000",
-    passwordHash: await hashPassword("demo1234"), role: "owner", branchId: null, active: true,
+    passwordHash: await hashPassword("demo1234"), pinHash: null, pages: null,
+    role: "owner", branchId: null, active: true,
   });
   await db.saveSubscription({
     tenantId: tenant.id, plan: "pro", status: "active",

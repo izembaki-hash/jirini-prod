@@ -172,7 +172,8 @@ model Subscription {
   @@index([status, expiresAt])
 }
 
-// حسابات الدخول: كل موظف قد يملك حساباً (الكاشير/الطباخ/المدير). كلمة السر مشفّرة bcrypt.
+// حسابات الدخول: كل موظف قد يملك حساباً (الكاشير/الطباخ/المدير). كلمة السر والكود مشفّران bcrypt.
+// pages: قائمة الصفحات المسموحة (null = الكل) — يحددها المالك لكل عامل.
 model User {
   id           String   @id @default(cuid())
   tenantId     String   @map("tenant_id")
@@ -181,6 +182,8 @@ model User {
   name         String
   phone        String
   passwordHash String   @map("password_hash")
+  pinHash      String?  @map("pin_hash")
+  pages        Json?
   role         String
   branchId     String?  @map("branch_id")
   active       Boolean  @default(true)

@@ -8,7 +8,8 @@ export interface TenantRow {
 }
 export interface UserRow {
   id: string; tenantId: string; employeeId: string | null; name: string;
-  phone: string; passwordHash: string; role: string; branchId: string | null; active: boolean;
+  phone: string; passwordHash: string; pinHash: string | null; pages: string[] | null;
+  role: string; branchId: string | null; active: boolean;
 }
 export interface ProductRow {
   id: string; tenantId: string; branchId: string; name: string; nameFr: string | null;
@@ -109,8 +110,11 @@ export interface DbPort {
   listTenants(): Promise<TenantRow[]>;
   findUserByPhone(tenantId: string, phone: string): Promise<UserRow | null>;
   findUserById(tenantId: string, userId: string): Promise<UserRow | null>;
-  listAllUsers(): Promise<Omit<UserRow, "passwordHash">[]>;
+  listUsers(tenantId: string): Promise<UserRow[]>;
+  listAllUsers(): Promise<Omit<UserRow, "passwordHash" | "pinHash">[]>;
   setUserPassword(tenantId: string, userId: string, passwordHash: string): Promise<void>;
+  setUserPin(tenantId: string, userId: string, pinHash: string | null): Promise<void>;
+  setUserPages(tenantId: string, userId: string, pages: string[] | null): Promise<UserRow>;
   listEmployees(tenantId: string): Promise<EmployeeRow[]>;
   createEmployee(e: Omit<EmployeeRow, "id">): Promise<EmployeeRow>;
   updateEmployee(tenantId: string, id: string, patch: Partial<EmployeeRow>): Promise<EmployeeRow>;
@@ -233,6 +237,19 @@ export class MemoryAdapter implements DbPort {
     if (!u) throw new Error("user");
     u.passwordHash = passwordHash;
   }
+  async setUserPin(tenantId: string, userId: string, pinHash: string | null) {
+    const u = this.users.find((x) => x.id === userId && x.tenantId === tenantId);
+    if (!u) throw new Error("user");
+    u.pinHash = pinHash;
+  }
+  async setUserPages(tenantId: string, userId: string, pages: string[] | null) {
+    const u = this.users.find((x) => x.id === userId && x.tenantId === tenantId);
+    if (!u) throw new Error("user");
+    u.pages = pages; return u;
+  }
+  async listUsers(tenantId: string) {
+    return this.users.filter((x) => x.tenantId === tenantId);
+  }
   async findUserById(tenantId: string, userId: string) {
     return this.users.find((x) => x.id === userId && x.tenantId === tenantId && x.active) ?? null;
   }
@@ -254,7 +271,7 @@ export class MemoryAdapter implements DbPort {
   }
   async createUser(u: Omit<UserRow, "id">) { const r = { ...u, id: uid("u") }; this.users.push(r); return r; }
   async listAllUsers() {
-    return this.users.map(({ passwordHash: _drop, ...u }) => u);
+    return this.users.map(({ passwordHash: _drop, pinHash: _pin, ...u }) => u);
   }
 
   async listProducts(tenantId: string, branchId?: string) {
@@ -550,6 +567,19 @@ export class PrismaAdapter implements DbPort {
     if (!cur) throw new Error("user");
     await this.m("user").update({ where: { id: userId }, data: { passwordHash } });
   }
+  async setUserPin(tenantId: string, userId: string, pinHash: string | null) {
+    const cur = await this.m("user").findFirst({ where: { id: userId, tenantId } });
+    if (!cur) throw new Error("user");
+    await this.m("user").update({ where: { id: userId }, data: { pinHash } });
+  }
+  async setUserPages(tenantId: string, userId: string, pages: string[] | null) {
+    const cur = await this.m("user").findFirst({ where: { id: userId, tenantId } });
+    if (!cur) throw new Error("user");
+    return PrismaAdapter.row<UserRow>(await this.m("user").update({ where: { id: userId }, data: { pages: pages as unknown } }));
+  }
+  async listUsers(tenantId: string) {
+    return PrismaAdapter.row<UserRow[]>(await this.m("user").findMany({ where: { tenantId }, orderBy: { createdAt: "desc" } }));
+  }
   async findUserById(tenantId: string, userId: string) {
     return PrismaAdapter.row<UserRow | null>(
       await this.m("user").findFirst({ where: { id: userId, tenantId, active: true } }));
@@ -622,7 +652,7 @@ export class PrismaAdapter implements DbPort {
   }
   async listAllUsers() {
     const rows = await this.m("user").findMany({ orderBy: { createdAt: "desc" }, take: 1000 });
-    return (rows as unknown as Record<string, unknown>[]).map(({ passwordHash: _d, ...u }) => u as unknown as Omit<UserRow, "passwordHash">);
+    return (rows as unknown as Record<string, unknown>[]).map(({ passwordHash: _d, pinHash: _p, ...u }) => u as unknown as Omit<UserRow, "passwordHash">);
   }
 
   async listProducts(tenantId: string, branchId?: string) {

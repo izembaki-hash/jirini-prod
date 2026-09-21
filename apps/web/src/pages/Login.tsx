@@ -5,18 +5,20 @@ import { ApiError } from "../api";
 import { useAuth } from "../auth";
 import { useStore } from "../store";
 import { t } from "../i18n";
-import { Button, Card, CardContent, Field, Input } from "../ui";
+import { Button, Card, CardContent, Field, Input, Segmented } from "../ui";
 
-// الدخول للإنتاج: slug النشاط + هاتف الموظف + كلمة السر.
+// الدخول للإنتاج: slug النشاط + (هاتف الموظف + كلمة السر) أو (الكود السري للعمال).
 export default function Login() {
-  const { login } = useAuth();
+  const { login, loginPin } = useAuth();
   const { s } = useStore();
   const L = s.lang;
   const nav = useNavigate();
   const [q] = useSearchParams();
+  const [mode, setMode] = useState<"password" | "pin">("password");
   const [slug, setSlug] = useState(q.get("slug") ?? "");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [pin, setPin] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -24,7 +26,12 @@ export default function Login() {
     e.preventDefault();
     setBusy(true); setErr("");
     try {
-      await login(slug.trim(), phone.trim(), password);
+      if (mode === "pin") {
+        if (!/^\d{4,8}$/.test(pin.trim())) { setErr(t(L, "pinBad")); setBusy(false); return; }
+        await loginPin(slug.trim(), pin.trim());
+      } else {
+        await login(slug.trim(), phone.trim(), password);
+      }
       nav("/app");
     } catch (ex) {
       setErr(ex instanceof ApiError
@@ -56,17 +63,27 @@ export default function Login() {
               <p className="mt-1 text-sm text-muted">{t(L, "lSub")}</p>
             </div>
             <form onSubmit={submit} className="flex flex-col gap-4">
+              <Segmented label={t(L, "lTitle")} value={mode}
+                options={[{ value: "password", label: t(L, "lModePass") }, { value: "pin", label: t(L, "lModePin") }]}
+                onChange={(v) => { setMode(v); setErr(""); }} />
               <Field label={t(L, "lSlug")} id="slug" hint={t(L, "lSlugHint")}>
                 <Input id="slug" value={slug} onChange={(e) => setSlug(e.target.value)} autoComplete="username" enterKeyHint="next" dir="ltr" />
               </Field>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <Field label={t(L, "lPhone")} id="lphone">
-                  <Input id="lphone" value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" autoComplete="tel" enterKeyHint="next" dir="ltr" />
+              {mode === "pin" ? (
+                <Field label={t(L, "lPin")} id="lpin" hint={t(L, "lPinHint")}>
+                  <Input id="lpin" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                    inputMode="numeric" autoComplete="one-time-code" enterKeyHint="go" dir="ltr" placeholder="••••••" />
                 </Field>
-                <Field label={t(L, "lPass")} id="lpw">
-                  <Input id="lpw" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" enterKeyHint="go" />
-                </Field>
-              </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Field label={t(L, "lPhone")} id="lphone">
+                    <Input id="lphone" value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" autoComplete="tel" enterKeyHint="next" dir="ltr" />
+                  </Field>
+                  <Field label={t(L, "lPass")} id="lpw">
+                    <Input id="lpw" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" enterKeyHint="go" />
+                  </Field>
+                </div>
+              )}
               {err && <p role="alert" className="pop-in rounded-[10px] bg-ember/10 px-3 py-2.5 text-sm font-bold text-ember">{err}</p>}
               <Button type="submit" size="lg" loading={busy}>{t(L, "lGo")}</Button>
               <Link to="/" className="mx-auto w-fit rounded-lg px-2 py-2 text-xs font-bold text-muted underline underline-offset-4">{t(L, "back")}</Link>

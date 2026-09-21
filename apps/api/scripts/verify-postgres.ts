@@ -37,7 +37,7 @@ async function main() {
   ok("advance delete", (await db.listAdvances(tenant.id, emp.id)).length === 0);
   await db.createUser({
     tenantId: tenant.id, employeeId: emp.id, name: "E", phone: "0550000001",
-    passwordHash: "h", role: "cashier", branchId: branch.id, active: true,
+    passwordHash: "h", pinHash: null, pages: null, role: "cashier", branchId: branch.id, active: true,
   });
   ok("findUserByPhone", (await db.findUserByPhone(tenant.id, "0550000001"))?.role === "cashier");
   ok("findUserById", (await db.findUserById(tenant.id, emp.id)) === null); // employee ≠ user

@@ -30,7 +30,8 @@ async function main() {
   });
   await db.createUser({
     tenantId: tenant.id, employeeId: emp.id, name: "Ø§Ù„Ù…Ø§Ù„Ùƒ", phone: "0550000000",
-    passwordHash: await hashPassword("demo1234"), role: "owner", branchId: null, active: true,
+    passwordHash: await hashPassword("demo1234"), pinHash: null, pages: null,
+    role: "owner", branchId: null, active: true,
   });
   const p1 = await db.createProduct({
     tenantId: tenant.id, branchId: branch.id, name: "ÙƒØ³ÙƒØ³", nameFr: "Couscous",
@@ -66,6 +67,32 @@ async function main() {
   const cashTok = r.json.token as string;
   r = await call("POST", "/products", { name: "x", branchId: branch.id, buyPrice: 1, sellPrice: 2, qty: 1 }, cashTok);
   ok("cashier cannot create product â†’ 403", r.status === 403);
+
+  // Ø§Ù„ÙƒÙˆØ¯ Ø§Ù„Ø³Ø±ÙŠ + ØµÙ„Ø§Ø­ÙŠØ§Øª Ø§Ù„ØµÙØ­Ø§Øª
+  r = await call("GET", "/auth/users", undefined, cashTok);
+  ok("cashier cannot list users â†’ 403", r.status === 403);
+  r = await call("GET", "/auth/users", undefined, ownerTok);
+  const cashUser = ((r.json as unknown[]) as { id: string; role: string; hasPin: boolean; pages: null }[]).find((u) => u.role === "cashier");
+  ok("users listed", !!cashUser && cashUser.hasPin === false);
+  r = await call("POST", `/auth/users/${cashUser!.id}/pin`, undefined, ownerTok);
+  const pin = (r.json as { pin: string }).pin;
+  ok("pin generated", r.status === 201 && /^\d{6}$/.test(pin));
+  r = await call("POST", "/auth/login", { slug: "demo-resto", pin: "000000" });
+  ok("wrong pin â†’ 401", r.status === 401);
+  r = await call("POST", "/auth/login", { slug: "demo-resto", pin });
+  const pinTok = (r.json as { token: string }).token;
+  const pinPages = (r.json as { user: { pages: string[] } }).user.pages;
+  ok("pin login + default pages", r.status === 200 && Array.isArray(pinPages) && pinPages.includes("pos"));
+  r = await call("GET", "/attendance", undefined, pinTok);
+  ok("pin token blocked from staff page â†’ 403", r.status === 403);
+  r = await call("GET", "/products", undefined, pinTok);
+  ok("pin token reads products (pos page)", r.status === 200);
+  r = await call("PATCH", `/auth/users/${cashUser!.id}/pages`, { pages: ["pos"] }, ownerTok);
+  ok("owner sets pages", r.status === 200);
+  r = await call("POST", "/auth/login", { slug: "demo-resto", pin });
+  ok("pages updated on login", r.status === 200 && JSON.stringify((r.json as { user: { pages: string[] } }).user.pages) === JSON.stringify(["pos"]));
+  r = await call("PATCH", `/auth/users/${cashUser!.id}/pages`, { pages: ["nope"] }, ownerTok);
+  ok("bad page rejected â†’ 400", r.status === 400);
 
   // ÙƒÙ„Ù…Ø© Ø§Ù„Ø³Ø±
   r = await call("POST", "/auth/change-password", { current: "nope", next: "newpass123" }, ownerTok);
@@ -364,9 +391,9 @@ async function main() {
   ok("upload image", upRes.status === 201 && !!upJson.url?.startsWith("/uploads/"));
 
   // Ø­Ø¶ÙˆØ± ÙˆØ±ÙˆØ§ØªØ¨
-  r = await call("POST", "/attendance/mark", { employeeId: emp.id, status: "full" }, cashTok);
+  r = await call("POST", "/attendance/mark", { employeeId: emp.id, status: "full" }, ownerTok2);
   ok("mark full", r.status === 201);
-  r = await call("POST", "/attendance/mark", { employeeId: emp.id, status: "half" }, cashTok);
+  r = await call("POST", "/attendance/mark", { employeeId: emp.id, status: "half" }, ownerTok2);
   ok("mark half upsert", r.status === 201 && (r.json as { status: string }).status === "half");
   r = await call("GET", "/salaries", undefined, ownerTok2);
   ok("salaries computed", r.status === 200 && Array.isArray(r.json));

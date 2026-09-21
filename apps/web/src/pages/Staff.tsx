@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { PencilSimple, Trash, X } from "@phosphor-icons/react";
 import { fmtDzd, todayKey, useStore, attSummary, laborFor, type Advance, type AttStatus, type Employee, type Role } from "../store";
-import { api, type ApiEmployee } from "../api";
-import { connected } from "../auth";
+import { api, APP_PAGES, type ApiEmployee, type ApiLoginUser } from "../api";
+import { connected, useAuth } from "../auth";
 import { t, type TKey } from "../i18n";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Field, Input, cn } from "../ui";
 
@@ -21,7 +21,9 @@ const toLocalAdv = (a: { id: string; employeeId: string; amount: number; date: s
 
 export default function Staff() {
   const { s, update } = useStore();
+  const { session } = useAuth();
   const L = s.lang;
+  const isOwner = !!session && session.role === "owner";
   const [name, setName] = useState("");
   const [role, setRole] = useState<Role>("cashier");
   const [title, setTitle] = useState("");
@@ -33,6 +35,9 @@ export default function Staff() {
   const [openAdv, setOpenAdv] = useState<string | null>(null);
   const [advAmt, setAdvAmt] = useState("");
   const [advNote, setAdvNote] = useState("");
+  const [accounts, setAccounts] = useState<ApiLoginUser[]>([]);
+  const [freshPin, setFreshPin] = useState<{ userId: string; pin: string } | null>(null);
+  const [pagesBusy, setPagesBusy] = useState<string | null>(null);
 
   const empName = (e: Employee) => e.title?.trim() ? e.title : `${e.name}`;
   const titles = Array.from(new Set([
@@ -53,6 +58,10 @@ export default function Staff() {
         }));
         const sal = await api.salaries();
         setServerSalaries(Object.fromEntries(sal.map((x) => [x.employee.id, x.total])));
+        try {
+          const users = await api.loginUsers();
+          setAccounts(users);
+        } catch { /* المدراء بلا صلاحية — يُخفى القسم */ }
       } catch { /* يبقى المحلي */ }
     })();
   }, [update]);
@@ -93,8 +102,9 @@ export default function Staff() {
       if (phone.trim().length < 7 || password.length < 6) { toast.error(t(L, "empNeedAccount")); return; }
       try {
         const r = await api.createEmployeeAccount({ name: name.trim(), phone: phone.trim(), password, role, title: ttl, halfWage: hw });
-        const list = await api.employees();
+        const [list, users] = await Promise.all([api.employees(), api.loginUsers().catch(() => null)]);
         update((p) => ({ ...p, employees: list.map(toLocalEmp) }));
+        if (users) setAccounts(users);
         setName(""); setTitle(""); setPhone(""); setPassword("");
         void r;
       } catch { toast.error(t(L, "errSaving")); }
@@ -126,6 +136,7 @@ export default function Staff() {
   };
 
   return (
+    <div className="flex flex-col gap-4">
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1.5fr]">
       <div className="flex flex-col gap-4">
         <Card><CardHeader><CardTitle>{t(L, "newEmp")}</CardTitle></CardHeader>
@@ -268,6 +279,46 @@ export default function Staff() {
           </ul>
         </CardContent>
       </Card>
+    </div>
+
+      {isOwner && connected() && (
+        <AccessCard
+          employees={s.employees}
+          accounts={accounts}
+          freshPin={freshPin}
+          pagesBusy={pagesBusy}
+          onTogglePage={async (userId, page, list) => {
+            const next = list === null ? [page] : list.includes(page) ? list.filter((p) => p !== page) : [...list, page];
+            setPagesBusy(userId);
+            try {
+              const r = await api.userPagesUpdate(userId, next.length === APP_PAGES.length ? null : next);
+              setAccounts((a) => a.map((u) => (u.id === userId ? { ...u, pages: r.pages } : u)));
+              toast.success(t(L, "pinSaved"));
+            } catch { toast.error(t(L, "errSaving")); }
+            finally { setPagesBusy(null); }
+          }}
+          onSetAll={async (userId, all) => {
+            setPagesBusy(userId);
+            try {
+              const r = await api.userPagesUpdate(userId, all ? null : []);
+              setAccounts((a) => a.map((u) => (u.id === userId ? { ...u, pages: r.pages } : u)));
+              toast.success(t(L, "pinSaved"));
+            } catch { toast.error(t(L, "errSaving")); }
+            finally { setPagesBusy(null); }
+          }}
+          onGenPin={async (userId) => {
+            try {
+              const r = await api.userPinCreate(userId);
+              setFreshPin({ userId, pin: r.pin });
+              setAccounts((a) => a.map((u) => (u.id === userId ? { ...u, hasPin: true } : u)));
+            } catch { toast.error(t(L, "errSaving")); }
+          }}
+          onCopyPin={async (pin) => {
+            try { await navigator.clipboard.writeText(pin); toast.success(t(L, "pinCopied")); }
+            catch { toast.error(t(L, "errSaving")); }
+          }}
+        />
+      )}
 
       {editing && (
         <EmpEditDialog
@@ -289,6 +340,89 @@ export default function Staff() {
         />
       )}
     </div>
+  );
+}
+
+// ─── صلاحيات الصفحات + الأكواد السرية (مالك فقط) ───
+function AccessCard({ employees, accounts, freshPin, pagesBusy, onTogglePage, onSetAll, onGenPin, onCopyPin }: {
+  employees: Employee[]; accounts: ApiLoginUser[];
+  freshPin: { userId: string; pin: string } | null; pagesBusy: string | null;
+  onTogglePage: (userId: string, page: string, list: string[] | null) => void;
+  onSetAll: (userId: string, all: boolean) => void;
+  onGenPin: (userId: string) => void; onCopyPin: (pin: string) => void;
+}) {
+  const { s } = useStore();
+  const L = s.lang;
+  const withAccount = employees
+    .map((e) => ({ e, u: accounts.find((a) => a.employeeId === e.id) }))
+    .filter((x) => x.u && x.u.role !== "owner");
+  if (withAccount.length === 0) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t(L, "permT")}</CardTitle>
+        <p className="text-xs text-muted">{t(L, "permHint")}</p>
+      </CardHeader>
+      <CardContent>
+        <ul className="flex flex-col gap-4">
+          {withAccount.map(({ e, u }) => {
+            const list = u!.pages;
+            const all = list === null;
+            return (
+              <li key={e.id} className="flex flex-col gap-2 rounded-2xl border border-line p-4">
+                <div className="flex items-center gap-2">
+                  <b className="flex-1">{e.name}</b>
+                  <button onClick={() => onSetAll(u!.id, true)} disabled={pagesBusy === u!.id}
+                    className="rounded-lg border border-line px-2.5 py-1.5 text-xs font-bold disabled:opacity-50">{t(L, "permAll")}</button>
+                  <button onClick={() => onSetAll(u!.id, false)} disabled={pagesBusy === u!.id}
+                    className="rounded-lg border border-line px-2.5 py-1.5 text-xs font-bold disabled:opacity-50">{t(L, "permNone")}</button>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3" role="group" aria-label={`${t(L, "permT")} — ${e.name}`}>
+                  {APP_PAGES.map((p) => {
+                    const on = all || list.includes(p);
+                    return (
+                      <button
+                        key={p} type="button" role="checkbox" aria-checked={on}
+                        disabled={pagesBusy === u!.id}
+                        onClick={() => onTogglePage(u!.id, p, list)}
+                        className={cn(
+                          "btn-press flex min-h-10 touch-manipulation items-center gap-2 rounded-[10px] border px-2.5 text-[13px] font-bold transition-colors disabled:opacity-50",
+                          on ? "border-growth bg-growth/10 text-growth-deep" : "border-line text-muted",
+                        )}
+                      >
+                        <span aria-hidden className={cn("grid size-4 shrink-0 place-items-center rounded border text-[10px]", on ? "border-growth bg-growth text-white" : "border-line-strong")}>
+                          {on ? "✓" : ""}
+                        </span>
+                        {t(L, p as never)}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex flex-wrap items-center gap-2 rounded-xl bg-canvas px-3 py-2">
+                  <span className="text-xs font-bold text-muted">{t(L, "pinT")}</span>
+                  {freshPin?.userId === u!.id ? (
+                    <>
+                      <b className="tnum rounded-lg bg-surface px-3 py-1.5 text-xl tracking-[0.3em]" dir="ltr">{freshPin.pin}</b>
+                      <button onClick={() => onCopyPin(freshPin.pin)}
+                        className="btn-press rounded-lg bg-growth px-3 py-1.5 text-xs font-bold text-white">{t(L, "pinCopy")}</button>
+                      <span className="w-full text-[11px] text-ember">{t(L, "pinShowOnce")}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-xs text-muted">{u!.hasPin ? "••••••" : t(L, "pinNone")}</span>
+                      <button onClick={() => onGenPin(u!.id)}
+                        className="btn-press ms-auto rounded-lg border border-line bg-surface px-3 py-1.5 text-xs font-bold">
+                        {u!.hasPin ? t(L, "pinRegen") : t(L, "pinGen")}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </CardContent>
+    </Card>
   );
 }
 

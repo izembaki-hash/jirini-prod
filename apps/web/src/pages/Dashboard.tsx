@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { fmtDzd, todayKey, useStore, displayName, dailySlice, laborFor } from "../store";
 import { api } from "../api";
-import { connected } from "../auth";
+import { connected, useAuth, canSee } from "../auth";
 import { t } from "../i18n";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Empty, Progress, StatusDot } from "../ui";
 import { Bars, Spark } from "../components/Charts";
@@ -48,6 +48,7 @@ function Checklist({ done, items }: { done: string[]; items: { key: string; labe
 }
 export default function Dashboard() {
   const { s } = useStore();
+  const { session } = useAuth();
   const L = s.lang;
   const today = s.orders.filter((o) => o.at.slice(0, 10) === todayKey());
   const [remote, setRemote] = useState<{
@@ -142,9 +143,9 @@ export default function Dashboard() {
             {openShift && <Badge tone="warn">{t(L, "openShiftB")}</Badge>}
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
-            <Link to="/app/pos"><Button>{t(L, "openPos")}</Button></Link>
-            <Link to="/app/inventory"><Button variant="outline">{t(L, "addProduct")}</Button></Link>
-            <Link to="/app/reports"><Button variant="outline">{t(L, "viewReports")}</Button></Link>
+            {(!connected() || canSee(session, "pos")) && <Link to="/app/pos"><Button>{t(L, "openPos")}</Button></Link>}
+            {(!connected() || canSee(session, "inventory")) && <Link to="/app/inventory"><Button variant="outline">{t(L, "addProduct")}</Button></Link>}
+            {(!connected() || canSee(session, "reports")) && <Link to="/app/reports"><Button variant="outline">{t(L, "viewReports")}</Button></Link>}
           </div>
         </div>
         <div className="flex flex-col justify-end gap-2">

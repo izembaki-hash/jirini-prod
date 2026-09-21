@@ -2,7 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster } from "sonner";
 import { StoreProvider, useStore } from "./store";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { AuthProvider, useAuth, isApiConfigured } from "./auth";
+import { AuthProvider, useAuth, isApiConfigured, canSee } from "./auth";
 import { t } from "./i18n";
 import { Shell } from "./components/Layout";
 import ActivitySelect from "./pages/ActivitySelect";
@@ -35,11 +35,11 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function RequireRole({ roles, children }: { roles: string[]; children: React.ReactNode }) {
+function RequirePage({ page, children }: { page: string; children: React.ReactNode }) {
   const { session } = useAuth();
   const { s } = useStore();
   if (!isApiConfigured || !session) return <>{children}</>;
-  if (!roles.includes(session.role)) {
+  if (!canSee(session, page)) {
     const L = s.lang;
     return app(
       <div className="mx-auto max-w-[520px] py-16 text-center">
@@ -50,10 +50,6 @@ function RequireRole({ roles, children }: { roles: string[]; children: React.Rea
   }
   return <>{children}</>;
 }
-
-const FIN = ["owner", "manager"]; // التقارير والمالية
-const OPS = ["owner", "manager", "cashier"]; // التشغيل اليومي
-const ALL = ["owner", "manager", "cashier", "cook"];
 
 function RequireRestaurant({ children }: { children: React.ReactNode }) {
   const { s } = useStore();
@@ -93,17 +89,17 @@ export default function App() {
           <Route path="/ops" element={<Ops />} />
             <Route path="/o/:slug/menu" element={<OrderPublic />} />
             <Route path="/app" element={<RequireAuth>{app(<Dashboard />)}</RequireAuth>} />
-            <Route path="/app/pos" element={<RequireAuth><RequireRole roles={OPS}>{app(<Pos />)}</RequireRole></RequireAuth>} />
-            <Route path="/app/shifts" element={<RequireAuth><RequireRole roles={OPS}>{app(<Shifts />)}</RequireRole></RequireAuth>} />
-            <Route path="/app/inventory" element={<RequireAuth><RequireRole roles={FIN}>{app(<Inventory />)}</RequireRole></RequireAuth>} />
-            <Route path="/app/kitchen" element={<RequireAuth><RequireRole roles={ALL}><RequireRestaurant>{app(<Kitchen />)}</RequireRestaurant></RequireRole></RequireAuth>} />
-            <Route path="/app/orders" element={<RequireAuth><RequireRole roles={OPS}>{app(<Orders />)}</RequireRole></RequireAuth>} />
-            <Route path="/app/customers" element={<RequireAuth><RequireRole roles={OPS}>{app(<Customers />)}</RequireRole></RequireAuth>} />
-            <Route path="/app/staff" element={<RequireAuth><RequireRole roles={FIN}>{app(<Staff />)}</RequireRole></RequireAuth>} />
-            <Route path="/app/reports" element={<RequireAuth><RequireRole roles={FIN}>{app(<Reports />)}</RequireRole></RequireAuth>} />
-            <Route path="/app/branches" element={<RequireAuth><RequireRole roles={FIN}>{app(<Branches />)}</RequireRole></RequireAuth>} />
-            <Route path="/app/growth" element={<RequireAuth><RequireRole roles={["owner"]}>{app(<Growth />)}</RequireRole></RequireAuth>} />
-            <Route path="/app/settings" element={<RequireAuth><RequireRole roles={FIN}>{app(<Settings />)}</RequireRole></RequireAuth>} />
+            <Route path="/app/pos" element={<RequireAuth><RequirePage page="pos">{app(<Pos />)}</RequirePage></RequireAuth>} />
+            <Route path="/app/shifts" element={<RequireAuth><RequirePage page="shifts">{app(<Shifts />)}</RequirePage></RequireAuth>} />
+            <Route path="/app/inventory" element={<RequireAuth><RequirePage page="inventory">{app(<Inventory />)}</RequirePage></RequireAuth>} />
+            <Route path="/app/kitchen" element={<RequireAuth><RequirePage page="kitchen"><RequireRestaurant>{app(<Kitchen />)}</RequireRestaurant></RequirePage></RequireAuth>} />
+            <Route path="/app/orders" element={<RequireAuth><RequirePage page="orders">{app(<Orders />)}</RequirePage></RequireAuth>} />
+            <Route path="/app/customers" element={<RequireAuth><RequirePage page="customers">{app(<Customers />)}</RequirePage></RequireAuth>} />
+            <Route path="/app/staff" element={<RequireAuth><RequirePage page="staff">{app(<Staff />)}</RequirePage></RequireAuth>} />
+            <Route path="/app/reports" element={<RequireAuth><RequirePage page="reports">{app(<Reports />)}</RequirePage></RequireAuth>} />
+            <Route path="/app/branches" element={<RequireAuth><RequirePage page="branches">{app(<Branches />)}</RequirePage></RequireAuth>} />
+            <Route path="/app/growth" element={<RequireAuth><RequirePage page="growth">{app(<Growth />)}</RequirePage></RequireAuth>} />
+            <Route path="/app/settings" element={<RequireAuth><RequirePage page="settings">{app(<Settings />)}</RequirePage></RequireAuth>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>

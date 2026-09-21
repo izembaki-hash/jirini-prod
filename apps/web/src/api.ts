@@ -40,9 +40,16 @@ async function req<T>(path: string, init?: RequestInit, auth = true): Promise<T>
 
 export interface LoginResp {
   token: string;
-  user: { name: string; role: string; branchId: string | null };
+  user: { name: string; role: string; branchId: string | null; pages: string[] | null };
   tenant: { id: string; slug: string; name: string; type: string; plan: string; lang: string };
 }
+
+export interface ApiLoginUser { id: string; employeeId: string | null; name: string; role: string; hasPin: boolean; pages: string[] | null; active: boolean }
+
+export const APP_PAGES = [
+  "pos", "shifts", "inventory", "kitchen", "orders", "customers",
+  "staff", "reports", "branches", "growth", "settings",
+] as const;
 
 export interface ApiProduct {
   id: string; name: string; nameFr: string | null; buyPrice: number; sellPrice: number;
@@ -77,6 +84,12 @@ export const api = {
   base: API_BASE,
   login: (slug: string, phone: string, password: string) =>
     req<LoginResp>("/auth/login", { method: "POST", body: JSON.stringify({ slug, phone, password }) }, false),
+  loginPin: (slug: string, pin: string) =>
+    req<LoginResp>("/auth/login", { method: "POST", body: JSON.stringify({ slug, pin }) }, false),
+  loginUsers: () => req<ApiLoginUser[]>("/auth/users"),
+  userPinCreate: (id: string) => req<{ pin: string }>(`/auth/users/${id}/pin`, { method: "POST" }),
+  userPagesUpdate: (id: string, pages: string[] | null) =>
+    req<{ id: string; pages: string[] | null }>(`/auth/users/${id}/pages`, { method: "PATCH", body: JSON.stringify({ pages }) }),
   me: () => req<{ auth: { role: string; name: string; tenant_id: string }; tenant: Record<string, unknown> }>("/auth/me"),
   changePassword: (current: string, next: string) =>
     req<{ ok: boolean }>("/auth/change-password", { method: "POST", body: JSON.stringify({ current, next }) }),

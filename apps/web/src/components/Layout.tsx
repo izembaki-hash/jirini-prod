@@ -5,7 +5,7 @@ import {
   CalendarCheck, ChartBar, GitBranch, TrendUp, Gear,
 } from "@phosphor-icons/react";
 import { useStore, type PlanId } from "../store";
-import { useAuth, isApiConfigured, connected } from "../auth";
+import { useAuth, isApiConfigured, connected, canSee } from "../auth";
 import { api, setBranch, ApiError } from "../api";
 import { t, type Lang } from "../i18n";
 import { cn } from "../ui";
@@ -43,6 +43,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
     document.documentElement.lang = lang;
     document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
   };
+
+  // روابط مرشحة حسب صلاحيات الجلسة (متصل) — التجريبي يعرض الكل
+  const gate = (page: string) => !connected() || !session || canSee(session, page);
+  const deskLinks = LINKS.filter((l) => (s.businessType === "restaurant" || l.to !== "/app/kitchen") && gate(l.key));
+  const mobLinks = LINKS.filter((l) => (MOBILE_TABS as readonly string[]).includes(l.to) && (s.businessType === "restaurant" || l.to !== "/app/kitchen") && gate(l.key));
 
   // متصل: الخادم مصدر الحقيقة —زامن الكتالوج والنشاط والفروع عند الدخول (مرة لكل جلسة).
   const syncedFor = useRef<string | null>(null);
@@ -102,7 +107,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <span className="block truncate text-[11px] text-muted">{t(L, "tagline")}</span>
           </span>
         </button>
-        {LINKS.filter((l) => s.businessType === "restaurant" || l.to !== "/app/kitchen").map((l) => (
+        {deskLinks.map((l) => (
           <NavLink
             key={l.to}
             to={l.to}
@@ -170,8 +175,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
       {/* شريط سفلي للهاتف: الأقسام الأهم بإبهام واحد — حبة نشطة + وزن مملوء */}
       <nav aria-label={L === "ar" ? "أقسام" : "Sections"}
         className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur print:hidden md:hidden">
-        <ul className={`mx-auto grid max-w-[560px] px-1 pt-1 ${s.businessType === "restaurant" ? "grid-cols-5" : "grid-cols-4"}`}>
-          {LINKS.filter((l) => (MOBILE_TABS as readonly string[]).includes(l.to) && (s.businessType === "restaurant" || l.to !== "/app/kitchen")).map((l) => (
+        <ul className={`mx-auto grid max-w-[560px] px-1 pt-1 ${mobLinks.length >= 5 ? "grid-cols-5" : mobLinks.length === 4 ? "grid-cols-4" : mobLinks.length === 3 ? "grid-cols-3" : mobLinks.length === 2 ? "grid-cols-2" : "grid-cols-1"}`}>
+          {mobLinks.map((l) => (
             <li key={l.to}>
               <NavLink
                 to={l.to}

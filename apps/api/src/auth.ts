@@ -9,6 +9,27 @@ export interface AuthToken {
   role: string;
   branch_id: string | null;
   name: string;
+  pages: string[] | null;
+}
+
+// الصفحات القابلة للتخصيص (لوحة التحكم /app متاحة دائماً لأي داخل).
+export const APP_PAGES = [
+  "pos", "shifts", "inventory", "kitchen", "orders", "customers",
+  "staff", "reports", "branches", "growth", "settings",
+] as const;
+export type AppPage = (typeof APP_PAGES)[number];
+
+// الافتراضي حسب الدور عند غياب التخصيص (سلوك اليوم).
+export const ROLE_DEFAULT_PAGES: Record<string, string[]> = {
+  cashier: ["pos", "shifts", "kitchen", "orders", "customers"],
+  cook: ["kitchen"],
+};
+
+// حسم الصفحات الفعلية: المالك والمدير = الكل دائماً.
+export function effectivePages(role: string, pages: unknown): string[] | null {
+  if (role === "owner" || role === "manager") return null;
+  if (Array.isArray(pages)) return (pages as unknown[]).filter((p): p is string => typeof p === "string" && (APP_PAGES as readonly string[]).includes(p));
+  return ROLE_DEFAULT_PAGES[role] ?? [];
 }
 
 declare global {
@@ -55,5 +76,16 @@ export function requireRole(...roles: string[]) {
       return;
     }
     next();
+  };
+}
+
+// فحص صفحة: المالك يتجاوز دائماً. pages=null في التوكن = كل الصفحات.
+export function requirePage(...pages: string[]) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.auth) { res.status(401).json({ error: "unauthorized" }); return; }
+    if (req.auth.role === "owner") { next(); return; }
+    const allowed = req.auth.pages;
+    if (allowed === null || pages.some((p) => allowed.includes(p))) { next(); return; }
+    res.status(403).json({ error: "page_forbidden" });
   };
 }
