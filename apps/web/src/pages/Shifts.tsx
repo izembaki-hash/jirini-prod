@@ -16,7 +16,7 @@ export default function Shifts() {
   const { s, update } = useStore();
   const L = s.lang;
   const { session } = useAuth();
-  const canReview = !connected() || !session || ["owner", "manager"].includes(session.role);
+  const canReview = !session || ["owner", "manager"].includes(session.role);
   const [opening, setOpening] = useState("10000");
   const [closing, setClosing] = useState("");
   const [note, setNote] = useState("");

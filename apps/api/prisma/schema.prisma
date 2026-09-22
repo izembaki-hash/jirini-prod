@@ -37,6 +37,7 @@ model Tenant {
   purchases       Purchase[]
   supplierPayments SupplierPayment[]
   alerts          Alert[]
+  supportTickets  SupportTicket[]
   drivers         Driver[]
   payments        Payment[]
   overheads       Overhead[]
@@ -328,6 +329,18 @@ model Alert {
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
   @@index([tenantId, read, createdAt])
+}
+
+// تذاكر الدعم: زر المساعدة في التطبيق → تصل للوحة المشغّل.
+model SupportTicket {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  message   String
+  contact   String?
+  status    String   @default("open") // open | resolved
+  createdAt DateTime @default(now())
+  @@index([tenantId, status, createdAt])
 }
 
 // ─── الشريحة P1: مصاريف ثابتة شهرية (كراء/كهرباء/غاز/...) تُوزع يومياً ───

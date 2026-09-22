@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useStore, type PlanId, fmtDzd } from "../store";
 import { API_BASE, ApiError, api } from "../api";
-import { useAuth, connected } from "../auth";
+import { useAuth } from "../auth";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Field, Input } from "../ui";
 import { ImagePicker } from "../components/ImagePicker";
 import { btSupported, btSavedName, btForget, btTestPrint, btPair, btPrefs, btSavePrefs, btErrorMessage } from "../lib/btprinter";
@@ -23,14 +23,6 @@ export default function Settings() {
   const { session } = useAuth();
   const [tax, setTax] = useState("0");
 
-  const exportAll = () => {
-    const blob = new Blob([localStorage.getItem("dz-saas-v1") ?? "{}"], { type: "application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "backup-dz-saas.json";
-    a.click();
-  };
-
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -38,17 +30,11 @@ export default function Settings() {
         <div id="sec-conn" className="scroll-mt-20" />
         <CardHeader><CardTitle>{t(L, "connT")}</CardTitle></CardHeader>
         <CardContent className="flex flex-col gap-2 text-sm">
-          {API_BASE ? (
-            <>
-              <p><Badge tone={session ? "ok" : "warn"}>{session ? t(L, "connectedB") : t(L, "loginNeeded")}</Badge></p>
-              <p className="tnum break-all text-xs text-muted" dir="ltr">{API_BASE}</p>
-              {session
-                ? <p className="text-muted">{session.tenant.name} · {session.name} ({session.role})</p>
-                : <Link to="/login"><Button size="sm">{t(L, "lGo")}</Button></Link>}
-            </>
-          ) : (
-            <p className="text-muted">{t(L, "demoModeH")}</p>
-          )}
+          <p><Badge tone={session ? "ok" : "warn"}>{session ? t(L, "connectedB") : t(L, "loginNeeded")}</Badge></p>
+          <p className="tnum break-all text-xs text-muted" dir="ltr">{API_BASE}</p>
+          {session
+            ? <p className="text-muted">{session.tenant.name} · {session.name} ({session.role})</p>
+            : <Link to="/login"><Button size="sm">{t(L, "lGo")}</Button></Link>}
         </CardContent>
       </Card>
       <Card><div id="sec-bill" className="scroll-mt-20" /><CardHeader><CardTitle>{t(L, "billingT")}</CardTitle></CardHeader>
@@ -91,19 +77,10 @@ export default function Settings() {
 
       <Card><div id="sec-sec" className="scroll-mt-20" /><CardHeader><CardTitle>{t(L, "secT")}</CardTitle></CardHeader>
         <CardContent className="flex flex-col gap-3 text-sm">
-          {connected() ? <PasswordForm /> : (
-            <p className="text-muted">{t(L, "secLogin")}</p>
-          )}
+          <PasswordForm />
           <DevicesCard />
           <p><Badge>{t(L, "scannerB")}</Badge></p>
           <p className="text-xs text-muted">{t(L, "noHw")}</p>
-        </CardContent>
-      </Card>
-
-      <Card><div id="sec-data" className="scroll-mt-20" /><CardHeader><CardTitle>{t(L, "backupT")}</CardTitle></CardHeader>
-        <CardContent className="flex flex-col gap-2">
-          <Button variant="outline" onClick={exportAll}>{t(L, "dlBackup")}</Button>
-          <Button variant="ghost" onClick={() => { if (confirm(t(L, "resetConfirm"))) localStorage.removeItem("dz-saas-v1"); location.reload(); }}>{t(L, "resetDemo")}</Button>
         </CardContent>
       </Card>
       </div>
@@ -259,7 +236,6 @@ function OverheadsCard() {
   const [monthly, setMonthly] = useState("");
 
   useEffect(() => {
-    if (!connected()) return;
     api.listOverheads().then((list) => update((p) => ({
       ...p,
       overheads: list.map((o) => ({ id: o.id, name: o.name, kind: o.kind, monthly: o.monthly, active: o.active, notes: o.notes ?? undefined })),
@@ -269,28 +245,20 @@ function OverheadsCard() {
   const add = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !(Number(monthly) > 0)) return;
-    if (connected()) {
-      try {
-        const o = await api.createOverhead({ name: name.trim(), kind, monthly: Number(monthly) });
-        update((p) => ({ ...p, overheads: [...p.overheads, { id: o.id, name: o.name, kind: o.kind, monthly: o.monthly, active: o.active }] }));
-      } catch { toast.error(t(L, "errSaving")); return; }
-    } else {
-      update((p) => ({ ...p, overheads: [...p.overheads, { id: `oh${Date.now()}`, name: name.trim(), kind, monthly: Number(monthly), active: true }] }));
-    }
+    try {
+      const o = await api.createOverhead({ name: name.trim(), kind, monthly: Number(monthly) });
+      update((p) => ({ ...p, overheads: [...p.overheads, { id: o.id, name: o.name, kind: o.kind, monthly: o.monthly, active: o.active }] }));
+    } catch { toast.error(t(L, "errSaving")); return; }
     setName(""); setMonthly("");
   };
 
   const toggle = async (id: string, active: boolean) => {
-    if (connected()) {
-      try { await api.updateOverhead(id, { active }); } catch { toast.error(t(L, "errSaving")); return; }
-    }
+    try { await api.updateOverhead(id, { active }); } catch { toast.error(t(L, "errSaving")); return; }
     update((p) => ({ ...p, overheads: p.overheads.map((x) => x.id === id ? { ...x, active } : x) }));
   };
 
   const remove = async (id: string) => {
-    if (connected()) {
-      try { await api.deleteOverhead(id); } catch { toast.error(t(L, "errSaving")); return; }
-    }
+    try { await api.deleteOverhead(id); } catch { toast.error(t(L, "errSaving")); return; }
     update((p) => ({ ...p, overheads: p.overheads.filter((x) => x.id !== id) }));
   };
 
@@ -332,10 +300,8 @@ function TablesCard() {
   const save = async (n: number) => {
     const v = Math.min(60, Math.max(1, n));
     update((p) => ({ ...p, tables: v }));
-    if (connected()) {
-      try { await api.tenantPatch({ tablesCount: v }); }
-      catch { toast.error(t(L, "errSaving")); }
-    }
+    try { await api.tenantPatch({ tablesCount: v }); }
+    catch { toast.error(t(L, "errSaving")); }
   };
   return (
     <Card><CardHeader><CardTitle>{t(L, "tablesT")}</CardTitle></CardHeader>
@@ -364,23 +330,17 @@ function MerchantCard() {
     if (!name.trim()) return;
     setBusy(true);
     update((p) => ({ ...p, businessName: name.trim(), shopPhone: phone.trim(), shopAddress: address.trim() }));
-    if (connected()) {
-      try {
-        await api.tenantPatch({ name: name.trim(), phone: phone.trim(), address: address.trim() });
-        toast.success(t(L, "merchSaved"));
-      } catch { toast.error(t(L, "errSaving")); }
-    } else {
+    try {
+      await api.tenantPatch({ name: name.trim(), phone: phone.trim(), address: address.trim() });
       toast.success(t(L, "merchSaved"));
-    }
+    } catch { toast.error(t(L, "errSaving")); }
     setBusy(false);
   };
 
   const saveLogo = async (url: string | null) => {
     update((p) => ({ ...p, shopLogo: url ?? "" }));
-    if (connected()) {
-      try { await api.tenantPatch({ logoUrl: url ?? "" }); }
-      catch { toast.error(t(L, "errSaving")); }
-    }
+    try { await api.tenantPatch({ logoUrl: url ?? "" }); }
+    catch { toast.error(t(L, "errSaving")); }
   };
 
   return (

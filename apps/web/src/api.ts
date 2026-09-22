@@ -234,8 +234,13 @@ async function opsReq<T>(path: string, init?: RequestInit): Promise<T> {
 export interface OpsOverview {
   tenants: number; users: number; ordersToday: number; revenueToday: number;
   subs: Record<string, number>;
+  byPlanType?: Record<string, Record<string, number>>;
   recentPayments: { id: string; tenantSlug: string; tenantName: string; plan: string; months: number; amountDzd: number; status: string; ref: string }[];
   generatedAt: string;
+}
+export interface OpsSupportTicket {
+  id: string; tenantId: string; tenantSlug: string; tenantName: string;
+  message: string; contact: string | null; status: string; createdAt: string;
 }
 export interface OpsTenant {
   id: string; slug: string; name: string; type: string; plan: string; lang: string; phone: string;
@@ -256,7 +261,12 @@ export const ops = {
   confirmManual: (tenantSlug: string, months: number) =>
     opsReq<{ ok: boolean; expiresAt: string }>("/billing/admin/confirm", { method: "POST", body: JSON.stringify({ tenantSlug, months }) }),
   health: () => opsReq<{ ok: boolean; db: string; uptimeSec: number; time: string; env: Record<string, unknown> }>("/ops/health"),
+  tickets: (status?: string) => opsReq<OpsSupportTicket[]>(`/ops/support${status ? `?status=${status}` : ""}`),
+  resolveTicket: (id: string) => opsReq<{ ok: boolean }>(`/ops/support/${id}/resolve`, { method: "POST" }),
 };
+
+export const supportSubmit = (message: string, contact?: string) =>
+  req<{ id: string }>("/support/tickets", { method: "POST", body: JSON.stringify({ message, contact }) });
 
 export interface ApiDriver { id: string; name: string; phone: string; vehicle: string | null; kind: string; active: boolean }
 export interface ProfitBd {

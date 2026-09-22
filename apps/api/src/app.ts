@@ -1007,7 +1007,15 @@ export async function buildApp(db?: DbPort) {
       const dayStart = new Date(`${algiersDay()}T00:00:00+01:00`).toISOString();
       let ordersToday = 0, revenueToday = 0;
       const subs: Record<string, number> = { active: 0, trialing: 0, pending: 0, past_due: 0, suspended: 0, none: 0 };
+      // مشتركون لكل خطة × نوع النشاط (مطعم/محل) — عدد المستأجرين لا حسابات العمال.
+      const byPlanType: Record<string, Record<string, number>> = {
+        restaurant: { starter: 0, pro: 0, mega: 0 },
+        shop: { starter: 0, pro: 0, mega: 0 },
+      };
       for (const tn of tenants) {
+        const typeKey = tn.type === "shop" ? "shop" : "restaurant";
+        const planKey = ["starter", "pro", "mega"].includes(tn.plan) ? tn.plan : "starter";
+        byPlanType[typeKey][planKey] = (byPlanType[typeKey][planKey] ?? 0) + 1;
         const sub = await dbx.getSubscription(tn.id);
         subs[sub?.status ?? "none"] = (subs[sub?.status ?? "none"] ?? 0) + 1;
         const orders = await dbx.listOrders(tn.id, { since: dayStart });
@@ -1021,7 +1029,7 @@ export async function buildApp(db?: DbPort) {
       });
       res.json({
         tenants: tenants.length, users: users.length, ordersToday, revenueToday,
-        subs, recentPayments, generatedAt: new Date().toISOString(),
+        subs, byPlanType, recentPayments, generatedAt: new Date().toISOString(),
       });
     } catch (e) { next(e); }
   });
@@ -1147,6 +1155,23 @@ export async function buildApp(db?: DbPort) {
         uploads: process.env.UPLOAD_DIR ?? "./uploads",
       },
     });
+  });
+
+  app.get("/ops/support", requireOperator, sensitiveLimit, async (req, res, next) => {
+    try {
+      const list = await dbx.listSupportTickets((req.query.status as string) || undefined);
+      const tenants = await dbx.listTenants();
+      res.json(list.map((t) => {
+        const tn = tenants.find((x) => x.id === t.tenantId);
+        return { ...t, tenantSlug: tn?.slug ?? "?", tenantName: tn?.name ?? "?" };
+      }));
+    } catch (e) { next(e); }
+  });
+  app.post("/ops/support/:id/resolve", requireOperator, sensitiveLimit, async (req, res, next) => {
+    try {
+      await dbx.resolveSupportTicket(req.params.id);
+      res.json({ ok: true });
+    } catch (e) { next(e); }
   });
 
   // ═══ التقارير ═══
@@ -1445,6 +1470,21 @@ export async function buildApp(db?: DbPort) {
   app.post("/alerts/:id/read", requireAuth, requirePage("inventory"), async (req, res, next) => {
     try { await dbx.markAlertRead(req.auth!.tenant_id, req.params.id); res.json({ ok: true }); }
     catch (e) { next(e); }
+  });
+
+  // ═══ تذاكر الدعم: زر المساعدة → لوحة المشغّل ═══
+  app.post("/support/tickets", requireAuth, sensitiveLimit, async (req, res, next) => {
+    try {
+      const b = z.object({
+        message: z.string().min(5).max(1000),
+        contact: z.string().max(200).optional(),
+      }).parse(req.body);
+      res.status(201).json(await dbx.createSupportTicket({
+        tenantId: req.auth!.tenant_id,
+        message: b.message.trim(),
+        contact: b.contact?.trim() || null,
+      }));
+    } catch (e) { next(e); }
   });
 
   // ═══ السائقون (داخليون وخارجيون — بلا دخول) ═══

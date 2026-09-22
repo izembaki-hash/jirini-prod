@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { fmtDzd, useStore } from "../store";
-import { API_BASE, ApiError, getOperatorKey, setOperatorKey, ops, type OpsOverview, type OpsTenant } from "../api";
+import { API_BASE, ApiError, getOperatorKey, setOperatorKey, ops, type OpsOverview, type OpsTenant, type OpsSupportTicket } from "../api";
 import { t } from "../i18n";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Empty, Field, Input, Segmented, Stat } from "../ui";
 
 // لوحة مشغّل المنصة: كل المستأجرين والمستخدمين والمدفوعات + إجراءات.
 // مستقلة عن Shell (مستوى المنصة لا المستأجر). تتطلب API + مفتاح المشغّل.
-type Tab = "overview" | "tenants" | "payments" | "system";
+type Tab = "overview" | "tenants" | "payments" | "support" | "system";
 
 export default function Ops() {
   const { s } = useStore();
@@ -69,6 +69,7 @@ export default function Ops() {
             { value: "overview", label: t(L, "tabOverview") },
             { value: "tenants", label: t(L, "tabTenants") },
             { value: "payments", label: t(L, "tabPayments") },
+            { value: "support", label: t(L, "tabSupport") },
             { value: "system", label: t(L, "tabSystem") },
           ]}
           onChange={setTab} />
@@ -76,6 +77,7 @@ export default function Ops() {
       {tab === "overview" && <OverviewTab onBadKey={() => { setOperatorKey(null); setAuthed(false); }} />}
       {tab === "tenants" && <TenantsTab />}
       {tab === "payments" && <PaymentsTab />}
+      {tab === "support" && <SupportTab />}
       {tab === "system" && <SystemTab />}
     </div>
   );
@@ -117,6 +119,39 @@ function OverviewTab({ onBadKey }: { onBadKey: () => void }) {
         <Badge tone="bad">{t(L, "subPastDue")}: <span className="tnum">{data.subs.past_due ?? 0}</span></Badge>
         <Badge tone="bad">{t(L, "subSuspended")}: <span className="tnum">{data.subs.suspended ?? 0}</span></Badge>
       </div>
+      {data.byPlanType && (
+        <Card>
+          <CardHeader><CardTitle>{t(L, "subsByPlanType")}</CardTitle></CardHeader>
+          <CardContent>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-line text-start text-xs text-muted">
+                  <th className="py-2 text-start font-medium">{t(L, "colType")}</th>
+                  <th className="py-2 text-center font-medium">{t(L, "planStarter")}</th>
+                  <th className="py-2 text-center font-medium">{t(L, "planPro")}</th>
+                  <th className="py-2 text-center font-medium">{t(L, "planMega")}</th>
+                  <th className="py-2 text-center font-medium">{t(L, "totalLb")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(["restaurant", "shop"] as const).map((type) => {
+                  const row = data.byPlanType![type] ?? {};
+                  const sum = (row.starter ?? 0) + (row.pro ?? 0) + (row.mega ?? 0);
+                  return (
+                    <tr key={type} className="border-b border-line last:border-0">
+                      <td className="py-2 font-bold">{t(L, type)}</td>
+                      <td className="tnum py-2 text-center">{row.starter ?? 0}</td>
+                      <td className="tnum py-2 text-center">{row.pro ?? 0}</td>
+                      <td className="tnum py-2 text-center">{row.mega ?? 0}</td>
+                      <td className="tnum py-2 text-center font-bold">{sum}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      )}
       <Card>
         <CardHeader><CardTitle>{t(L, "recentPay")}</CardTitle></CardHeader>
         <CardContent>
@@ -271,6 +306,49 @@ function PaymentsTab() {
             </li>
           ))}
           {list?.length === 0 && <li className="text-sm text-muted">{t(L, "noData")}</li>}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SupportTab() {
+  const { s } = useStore();
+  const L = s.lang;
+  const [list, setList] = useState<OpsSupportTicket[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const load = () => ops.tickets().then(setList).catch(() => toast.error(t(L, "eSrv")));
+  useEffect(() => { load(); }, []);
+  const resolve = async (id: string) => {
+    setBusy(id);
+    try { await ops.resolveTicket(id); await load(); }
+    catch { toast.error(t(L, "eSrv")); }
+    finally { setBusy(null); }
+  };
+  if (!list) return <p className="text-sm text-muted">…</p>;
+  if (list.length === 0) return <Empty title={t(L, "noData")} hint="" />;
+  return (
+    <Card>
+      <CardHeader><CardTitle>{t(L, "tabSupport")}</CardTitle></CardHeader>
+      <CardContent>
+        <ul className="flex flex-col">
+          {list.map((tk) => (
+            <li key={tk.id} className="flex flex-col gap-1 border-t border-line py-3 text-sm first:border-0 first:pt-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <b>{tk.tenantName}</b>
+                <span className="tnum text-xs text-muted" dir="ltr">{tk.tenantSlug}</span>
+                <Badge tone={tk.status === "resolved" ? "ok" : "warn"}>{tk.status === "resolved" ? t(L, "ticketResolved") : t(L, "ticketOpen")}</Badge>
+                <span className="tnum ms-auto text-xs text-muted">{new Date(tk.createdAt).toLocaleString("fr-DZ")}</span>
+              </div>
+              <p className="text-ink">{tk.message}</p>
+              {tk.contact && <p className="text-xs text-muted" dir="ltr">{tk.contact}</p>}
+              {tk.status === "open" && (
+                <Button size="sm" variant="outline" className="mt-1 w-fit" loading={busy === tk.id} onClick={() => resolve(tk.id)}>
+                  {t(L, "ticketResolve")}
+                </Button>
+              )}
+            </li>
+          ))}
         </ul>
       </CardContent>
     </Card>

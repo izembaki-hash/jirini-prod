@@ -49,12 +49,14 @@ export default function BillingReturn() {
             <span aria-hidden className="size-8 animate-spin rounded-full border-2 border-line border-t-growth" />
           ) : null}
           {state === "failed" && (
-            <Link to="/app/settings"><Button>{t(L, "retRetry")}</Button></Link>
+            connected()
+              ? <Link to="/app/settings"><Button>{t(L, "retRetry")}</Button></Link>
+              : <Link to="/signup"><Button>{t(L, "retRetry")}</Button></Link>
           )}
           {state === "paid" && (
             <Link to="/app"><Button>{t(L, "wEnter")}</Button></Link>
           )}
-          <Link to="/app/settings" className="text-xs text-muted underline">{t(L, "retBack")}</Link>
+          <Link to={connected() ? "/app/settings" : "/login"} className="text-xs text-muted underline">{t(L, "retBack")}</Link>
         </CardContent>
       </Card>
     </div>

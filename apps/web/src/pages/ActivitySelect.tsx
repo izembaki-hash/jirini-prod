@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, CheckCircle, DeviceMobile, Wallet, Translate } from "@phosphor-icons/react";
-import { useStore, resetDemo } from "../store";
+import { useStore } from "../store";
 import { t } from "../i18n";
 import { cn } from "../ui";
 

@@ -1,14 +1,15 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   SquaresFour, CashRegister, Timer, Package, CookingPot, Receipt, Users,
-  CalendarCheck, ChartBar, GitBranch, TrendUp, Gear,
+  CalendarCheck, ChartBar, GitBranch, TrendUp, Gear, Question,
 } from "@phosphor-icons/react";
+import { toast } from "sonner";
 import { useStore, type PlanId } from "../store";
-import { useAuth, isApiConfigured, connected, canSee } from "../auth";
-import { api, setBranch, ApiError } from "../api";
+import { useAuth, connected, canSee } from "../auth";
+import { api, setBranch, ApiError, supportSubmit } from "../api";
 import { t, type Lang } from "../i18n";
-import { cn } from "../ui";
+import { Button, cn } from "../ui";
 
 const PRICE_OF: Record<PlanId, number> = { starter: 2500, pro: 3000, mega: 4500 };
 const roleLabel = (role: string, L: Lang) =>
@@ -32,11 +33,49 @@ const LINKS = [
 // الخمسة الأهم للشريط السفلي في الهاتف (POS أولاً لطبيعة الاستخدام)
 const MOBILE_TABS = ["/app", "/app/pos", "/app/kitchen", "/app/orders", "/app/settings"] as const;
 
+function HelpDialog({ open, onClose, lang }: { open: boolean; onClose: () => void; lang: Lang }) {
+  const [msg, setMsg] = useState("");
+  const [contact, setContact] = useState("");
+  const [busy, setBusy] = useState(false);
+  if (!open) return null;
+  const send = async () => {
+    if (msg.trim().length < 5) return;
+    setBusy(true);
+    try {
+      await supportSubmit(msg.trim(), contact.trim() || undefined);
+      toast.success(t(lang, "helpSent"));
+      setMsg(""); setContact("");
+      onClose();
+    } catch {
+      toast.error(t(lang, "helpFail"));
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="dialog-scrim fixed inset-0 z-50 grid place-items-center bg-ink/40 p-4" onClick={onClose} role="presentation">
+      <div className="w-full max-w-[420px] rounded-2xl border border-line bg-surface p-5 shadow-xl" role="dialog" aria-modal="true" aria-label={t(lang, "helpTitle")} onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-lg font-bold">{t(lang, "helpTitle")}</h2>
+        <p className="mt-1 text-sm text-muted">{t(lang, "helpHint")}</p>
+        <label className="mt-4 block text-sm font-medium" htmlFor="help-msg">{t(lang, "helpMsg")}</label>
+        <textarea id="help-msg" rows={4} value={msg} onChange={(e) => setMsg(e.target.value)}
+          className="mt-1 w-full rounded-[10px] border border-line bg-canvas px-3 py-2 text-sm" />
+        <label className="mt-3 block text-sm font-medium" htmlFor="help-contact">{t(lang, "helpContact")}</label>
+        <input id="help-contact" value={contact} onChange={(e) => setContact(e.target.value)} dir="ltr"
+          className="mt-1 h-11 w-full rounded-[10px] border border-line bg-canvas px-3 text-sm" />
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onClose} className="h-10 rounded-[10px] border border-line px-4 text-sm font-bold">{t(lang, "done")}</button>
+          <Button onClick={send} loading={busy} disabled={msg.trim().length < 5}>{t(lang, "helpSend")}</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Shell({ children }: { children: React.ReactNode }) {
   const { s, update } = useStore();
   const { session, logout } = useAuth();
   const nav = useNavigate();
   const L = s.lang;
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const setLang = (lang: "ar" | "fr") => {
     update((p) => ({ ...p, lang }));
@@ -44,14 +83,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
     document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
   };
 
-  // روابط مرشحة حسب صلاحيات الجلسة (متصل) — التجريبي يعرض الكل
-  const gate = (page: string) => !connected() || !session || canSee(session, page);
+  // روابط مرشحة حسب صلاحيات الجلسة (الجلسة إلزامية في `/app`).
+  const gate = (page: string) => canSee(session, page);
   const deskLinks = LINKS.filter((l) => (s.businessType === "restaurant" || l.to !== "/app/kitchen") && gate(l.key));
   const mobLinks = LINKS.filter((l) => (MOBILE_TABS as readonly string[]).includes(l.to) && (s.businessType === "restaurant" || l.to !== "/app/kitchen") && gate(l.key));
 
   // متصل: الخادم مصدر الحقيقة —زامن الكتالوج والنشاط والفروع عند الدخول (مرة لكل جلسة).
   const syncedFor = useRef<string | null>(null);
-  const sessionKey = session ? `in:${session.tenant.id}` : "demo";
+  const sessionKey = session ? `in:${session.tenant.id}` : "none";
   useEffect(() => {
     if (!connected() || syncedFor.current === sessionKey) return;
     syncedFor.current = sessionKey;
@@ -142,32 +181,26 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <span className="max-w-[40vw] truncate text-sm font-bold">{s.businessName}</span>
           </button>
           <div className="ms-auto flex items-center gap-2">
-            {isApiConfigured && session ? (
+            {session && (
               <>
                 <span className="hidden rounded-full border border-line px-2.5 py-1 text-xs text-muted sm:inline">
                   {session.name} · {roleLabel(session.role, L)}
                 </span>
+                <button onClick={() => setHelpOpen(true)} className="h-11 min-w-11 rounded-[10px] border border-line px-3 text-sm font-bold" aria-label={t(L, "helpBtn")} title={t(L, "helpBtn")}>
+                  <Question size={18} weight="bold" aria-hidden />
+                </button>
                 <button onClick={() => { logout(); nav("/login"); }} className="h-11 rounded-[10px] border border-line px-3 text-sm font-bold" aria-label={L === "ar" ? "خروج" : "Déconnexion"}>
                   {L === "ar" ? "خروج" : "Sortie"}
                 </button>
               </>
-            ) : (
-              <span className="hidden rounded-full border border-line px-2.5 py-1 text-xs text-muted sm:inline">{roleLabel(s.role, L)}</span>
             )}
             <button onClick={() => setLang(L === "ar" ? "fr" : "ar")} className="h-11 min-w-11 rounded-[10px] border border-line px-3 text-sm font-bold" aria-label="Language">
               {L === "ar" ? "FR" : "عر"}
             </button>
           </div>
         </header>
+        <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} lang={L} />
         <main id="main" className="flex-1 px-4 pb-24 pt-6 sm:px-6 md:pb-10">
-          {isApiConfigured && !session && (
-            <div className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl border border-hold/40 bg-hold/10 px-4 py-2.5 text-sm">
-              <span className="flex-1 font-medium">{t(L, "demoBanner")}</span>
-              <button onClick={() => nav("/login")} className="btn-press rounded-[10px] bg-growth px-4 py-2 text-[13px] font-bold text-white">
-                {t(L, "lGo")}
-              </button>
-            </div>
-          )}
           {children}
         </main>
       </div>

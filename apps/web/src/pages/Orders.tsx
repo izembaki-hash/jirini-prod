@@ -28,7 +28,7 @@ export default function Orders() {
   const L = s.lang;
   const { session } = useAuth();
   const gated = s.plan === "starter";
-  const slug = session?.tenant.slug ?? "demo";
+  const slug = session?.tenant.slug ?? "";
   const base = `${window.location.origin}/o/${slug}/menu`;
   const [remoteOrders, setRemoteOrders] = useState<Order[] | null>(null);
   const [tab, setTab] = useState<"orders" | "delivery">("orders");

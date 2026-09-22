@@ -143,9 +143,9 @@ export default function Dashboard() {
             {openShift && <Badge tone="warn">{t(L, "openShiftB")}</Badge>}
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
-            {(!connected() || canSee(session, "pos")) && <Link to="/app/pos"><Button>{t(L, "openPos")}</Button></Link>}
-            {(!connected() || canSee(session, "inventory")) && <Link to="/app/inventory"><Button variant="outline">{t(L, "addProduct")}</Button></Link>}
-            {(!connected() || canSee(session, "reports")) && <Link to="/app/reports"><Button variant="outline">{t(L, "viewReports")}</Button></Link>}
+            {canSee(session, "pos") && <Link to="/app/pos"><Button>{t(L, "openPos")}</Button></Link>}
+            {canSee(session, "inventory") && <Link to="/app/inventory"><Button variant="outline">{t(L, "addProduct")}</Button></Link>}
+            {canSee(session, "reports") && <Link to="/app/reports"><Button variant="outline">{t(L, "viewReports")}</Button></Link>}
           </div>
         </div>
         <div className="flex flex-col justify-end gap-2">

@@ -43,7 +43,7 @@ export default function Plans() {
                 {p.missing.map((f) => <li key={f} className="flex gap-2 text-muted"><span aria-hidden>✗</span>{t(L, f)}</li>)}
               </ul>
               <Button className="mt-auto w-full" variant={s.plan === p.id ? "primary" : "outline"}
-                onClick={() => { update((prev) => ({ ...prev, plan: p.id })); nav("/wizard"); }}>
+                onClick={() => { update((prev) => ({ ...prev, plan: p.id })); nav(`/signup?plan=${p.id}`); }}>
                 {s.plan === p.id ? t(L, "continueWith") : `${t(L, "choose")} ${NAMES[p.id].split(" ")[0]}`}
               </Button>
             </CardContent>

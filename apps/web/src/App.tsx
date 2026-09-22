@@ -2,13 +2,12 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster } from "sonner";
 import { StoreProvider, useStore } from "./store";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { AuthProvider, useAuth, isApiConfigured, canSee } from "./auth";
+import { AuthProvider, useAuth, canSee } from "./auth";
 import { t } from "./i18n";
 import { Shell } from "./components/Layout";
 import ActivitySelect from "./pages/ActivitySelect";
 import Signup from "./pages/Signup";
 import Plans from "./pages/Plans";
-import Wizard from "./pages/Wizard";
 import Login from "./pages/Login";
 import BillingReturn from "./pages/BillingReturn";
 import SetPassword from "./pages/SetPassword";
@@ -30,15 +29,17 @@ import Settings from "./pages/Settings";
 
 const app = (el: React.ReactNode) => <Shell>{el}</Shell>;
 
-// بدون API مضبوط: وضع تجريبي محلي مفتوح. مع API: جلسة دخول = متصل، وبدونها = تجريبي مع شريط دعوة للدخول (لا حائط).
+// إنتاج: كل مسارات التطبيق تتطلب جلسة دخول — لا وضع تجريبي.
 function RequireAuth({ children }: { children: React.ReactNode }) {
+  const { session } = useAuth();
+  if (!session) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 
 function RequirePage({ page, children }: { page: string; children: React.ReactNode }) {
   const { session } = useAuth();
   const { s } = useStore();
-  if (!isApiConfigured || !session) return <>{children}</>;
+  if (!session) return <Navigate to="/login" replace />;
   if (!canSee(session, page)) {
     const L = s.lang;
     return app(
@@ -81,7 +82,6 @@ export default function App() {
             <Route path="/" element={<ActivitySelect />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/plans" element={<Navigate to="/signup" replace />} />
-            <Route path="/wizard" element={<Navigate to="/signup" replace />} />
             <Route path="/login" element={<Login />} />
           <Route path="/billing/return" element={<BillingReturn />} />
           <Route path="/checkout" element={<Checkout />} />

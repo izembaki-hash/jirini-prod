@@ -267,40 +267,47 @@ async function main() {
   r = await call("POST", `/public/demo-resto/orders/${pubNum}/rate`, { rating: 5 });
   ok("rate before delivered â†’ 404", r.status === 404);
 
-  // Ø§Ù„ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø°Ø§ØªÙŠ + Ø§Ù„ÙÙˆØªØ±Ø©
+  // التسجيل الذاتي + الفوترة (الدفع إلزامي: لا كلمة سر قبل الدفع)
   r = await call("GET", "/public/plans");
   ok("public plans", r.status === 200 && Array.isArray(r.json) && (r.json as unknown[]).length === 3);
   r = await call("POST", "/public/signup", {
     name: "Superette Essalam", type: "shop", phone: "0550999888", plan: "starter",
-    ownerName: "Karim", password: "secret12",
+    ownerName: "Karim",
   });
-  ok("self signup â†’ 201 + trial", r.status === 201 && typeof (r.json as { slug: string }).slug === "string");
+  ok("self signup → 201", r.status === 201 && typeof (r.json as { slug: string }).slug === "string");
   const slug2 = (r.json as { slug: string }).slug;
+  const tenant2 = (await db.getTenantBySlug(slug2))!;
+  // قبل الدفع: لا كلمة سر → الدخول مرفوض (لا حساب تجريبي)
   r = await call("POST", "/auth/login", { slug: slug2, phone: "0550999888", password: "secret12" });
-  ok("new tenant login", r.status === 200);
+  ok("login before payment → 401", r.status === 401);
+  const owner2User = (await db.listUsers(tenant2.id)).find((u) => u.role === "owner")!;
+  await db.setUserPassword(tenant2.id, owner2User.id, await hashPassword("secret12"));
+  r = await call("POST", "/auth/login", { slug: slug2, phone: "0550999888", password: "secret12" });
+  ok("new tenant login after password set", r.status === 200);
   const owner2 = r.json.token as string;
   r = await call("GET", "/billing/status", undefined, owner2);
-  ok("billing trialing", r.status === 200 && (r.json as { status: string }).status === "trialing");
+  ok("billing no sub → none", r.status === 200 && (r.json as { status: string }).status === "none");
   r = await call("POST", "/billing/submit-payment", { ref: "CCP-12345", months: 2 }, owner2);
-  ok("submit payment â†’ pending", r.status === 200 && (r.json as { status: string }).status === "pending");
+  ok("submit payment → pending", r.status === 200 && (r.json as { status: string }).status === "pending");
   r = await call("POST", "/billing/admin/confirm", { tenantSlug: slug2, months: 2 }, undefined, { "x-operator-key": "wrong" });
-  ok("operator wrong key â†’ 401", r.status === 401);
+  ok("operator wrong key → 401", r.status === 401);
   r = await call("POST", "/billing/admin/confirm", { tenantSlug: slug2, months: 2 }, undefined, { "x-operator-key": process.env.OPERATOR_KEY ?? "" });
-  ok("operator confirm â†’ active", r.status === 200 && typeof (r.json as { expiresAt: string }).expiresAt === "string");
+  ok("operator confirm → active", r.status === 200 && typeof (r.json as { expiresAt: string }).expiresAt === "string");
   r = await call("POST", "/billing/satim/notify", { order_id: "x" });
-  ok("satim stub removed â†’ 404", r.status === 404);
+  ok("satim stub removed → 404", r.status === 404);
 
-  // Ø¥Ù†ÙØ§Ø° Ø§Ù„Ø§Ù†ØªÙ‡Ø§Ø¡: Ù†ÙÙ†Ù‡ÙŠ Ø§Ù„Ø§Ø´ØªØ±Ø§Ùƒ Ù…Ø¨Ø§Ø´Ø±Ø© Ø«Ù… Ù†Ø­Ø§ÙˆÙ„ Ø§Ù„Ø¨ÙŠØ¹ (ÙŠÙØ´Ù„ Ù‚Ø¨Ù„ ÙØ­Øµ Ø§Ù„Ù…Ù†ØªØ¬)
+  // إنفاذ الانهيار: نُنهي الاشتراك ثم نحظر الشراء
   await db.saveSubscription({
-    tenantId: (await db.getTenantBySlug(slug2))!.id, plan: "starter", status: "past_due",
+    tenantId: tenant2.id, plan: "starter", status: "past_due",
     startedAt: new Date().toISOString(), expiresAt: new Date(Date.now() - 1000).toISOString(),
     amountDzd: 2500, lastRef: "CCP-12345", confirmedBy: null, confirmedAt: null,
   });
+  const expBranch = (await db.listBranches(tenant2.id))[0]!;
   r = await call("POST", "/orders", {
-    branchId: branch.id, kind: "dinein", lines: [{ productId: "nope", qty: 1 }],
+    branchId: expBranch.id, kind: "dinein", lines: [{ productId: "nope", qty: 1 }],
     discount: 0, tax: 0, payMethod: "cash",
   }, owner2);
-  ok("expired subscription â†’ 402", r.status === 402);
+  ok("expired subscription → 402", r.status === 402);
   r = await call("POST", "/public/demo-resto/orders", { kind: "pickup", lines: [{ productId: p1.id, qty: 1 }], phone: "0550222222" });
   ok("unrelated tenant still ok", r.status === 201);
 
@@ -537,6 +544,26 @@ async function main() {
   ok("advances listed", r.status === 200 && ((r.json as unknown[]) as { id: string }[]).some((a) => a.id === advId));
   r = await call("DELETE", `/salary-advances/${advId}`, undefined, ownerTok2);
   ok("advance delete", r.status === 200);
+
+  // تذاكر الدعم: مستخدم يرسل → المشغّل يرى ويغلق
+  r = await call("POST", "/support/tickets", { message: "لا تظهر فاتورة الطاولة 3" }, ownerTok2);
+  ok("support ticket created", r.status === 201 && typeof (r.json as { id: string }).id === "string");
+  const tktId = (r.json as { id: string }).id;
+  r = await call("POST", "/support/tickets", { message: "hi" }, ownerTok2);
+  ok("short ticket → 400", r.status === 400);
+  r = await call("GET", "/ops/support", undefined, undefined, { "x-operator-key": process.env.OPERATOR_KEY ?? "" });
+  ok("ops lists tickets", r.status === 200 && ((r.json as unknown[]) as { id: string }[]).some((t) => t.id === tktId));
+  r = await call("POST", `/ops/support/${tktId}/resolve`, undefined, undefined, { "x-operator-key": process.env.OPERATOR_KEY ?? "" });
+  ok("ops resolve ticket", r.status === 200);
+  r = await call("GET", "/ops/support?status=open", undefined, undefined, { "x-operator-key": process.env.OPERATOR_KEY ?? "" });
+  ok("resolved ticket gone from open", r.status === 200 && !((r.json as unknown[]) as { id: string }[]).some((t) => t.id === tktId));
+  r = await call("GET", "/ops/support", undefined, undefined, { "x-operator-key": "wrong" });
+  ok("ops support wrong key → 401", r.status === 401);
+
+  // عدّاد الخطة×النوع
+  r = await call("GET", "/ops/overview", undefined, undefined, { "x-operator-key": process.env.OPERATOR_KEY ?? "" });
+  const ovPlanType = r.json as { byPlanType?: Record<string, Record<string, number>> };
+  ok("overview byPlanType restaurant+shop", r.status === 200 && !!ovPlanType.byPlanType && typeof ovPlanType.byPlanType.restaurant?.pro === "number" && typeof ovPlanType.byPlanType.shop?.starter === "number");
 
   server.close();
   console.log(failures === 0 ? "ALL GREEN" : `${failures} FAILURES`);

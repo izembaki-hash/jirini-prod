@@ -85,6 +85,10 @@
         reverse_proxy api:4000
     }
 
+    handle /support* {
+        reverse_proxy api:4000
+    }
+
     handle /public* {
         reverse_proxy api:4000
     }

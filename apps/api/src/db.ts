@@ -75,6 +75,10 @@ export interface AlertRow {
   id: string; tenantId: string; kind: string; refId: string | null;
   message: string; read: boolean;
 }
+export interface SupportTicketRow {
+  id: string; tenantId: string; message: string; contact: string | null;
+  status: string; createdAt: string;
+}
 export interface OverheadRow {
   id: string; tenantId: string; name: string; kind: string;
   monthly: number; active: boolean; notes: string | null;
@@ -177,6 +181,10 @@ export interface DbPort {
   createAlert(a: Omit<AlertRow, "id" | "createdAt">): Promise<AlertRow>;
   listAlerts(tenantId: string, unreadOnly?: boolean): Promise<AlertRow[]>;
   markAlertRead(tenantId: string, id: string): Promise<void>;
+  // تذاكر الدعم
+  createSupportTicket(t: Omit<SupportTicketRow, "id" | "createdAt" | "status">): Promise<SupportTicketRow>;
+  listSupportTickets(status?: string): Promise<SupportTicketRow[]>;
+  resolveSupportTicket(id: string): Promise<void>;
   // مصاريف ثابتة
   listOverheads(tenantId: string): Promise<OverheadRow[]>;
   createOverhead(o: Omit<OverheadRow, "id">): Promise<OverheadRow>;
@@ -457,6 +465,19 @@ export class MemoryAdapter implements DbPort {
   async markAlertRead(tenantId: string, id: string) {
     const a = this.alerts.find((x) => x.id === id && x.tenantId === tenantId);
     if (a) a.read = true;
+  }
+
+  supportTickets: SupportTicketRow[] = [];
+  async createSupportTicket(t: Omit<SupportTicketRow, "id" | "createdAt" | "status">) {
+    const r = { ...t, id: uid("st"), status: "open", createdAt: now() };
+    this.supportTickets.unshift(r); return r;
+  }
+  async listSupportTickets(status?: string) {
+    return this.supportTickets.filter((t) => !status || t.status === status);
+  }
+  async resolveSupportTicket(id: string) {
+    const t = this.supportTickets.find((x) => x.id === id);
+    if (t) t.status = "resolved";
   }
 
   overheads: OverheadRow[] = [];
@@ -901,6 +922,19 @@ export class PrismaAdapter implements DbPort {
   async markAlertRead(tenantId: string, id: string) {
     const cur = await this.m("alert").findFirst({ where: { id, tenantId } });
     if (cur) await this.m("alert").update({ where: { id }, data: { read: true } });
+  }
+
+  async createSupportTicket(t: Omit<SupportTicketRow, "id" | "createdAt" | "status">) {
+    return PrismaAdapter.row<SupportTicketRow>(await this.m("supportTicket").create({ data: t }));
+  }
+  async listSupportTickets(status?: string) {
+    return PrismaAdapter.row<SupportTicketRow[]>(await this.m("supportTicket").findMany({
+      where: status ? { status } : {},
+      orderBy: { createdAt: "desc" }, take: 200,
+    }));
+  }
+  async resolveSupportTicket(id: string) {
+    await this.m("supportTicket").update({ where: { id }, data: { status: "resolved" } });
   }
 
   async listOverheads(tenantId: string) {

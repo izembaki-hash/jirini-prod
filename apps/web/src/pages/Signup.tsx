@@ -9,6 +9,8 @@ import { Button, Card, CardContent, CardHeader, CardTitle, CardDesc, Field, Inpu
 export default function Signup() {
   const [q] = useSearchParams();
   const type = (q.get("type") === "shop" ? "shop" : "restaurant") as "restaurant" | "shop";
+  const planParam = q.get("plan");
+  const plan = planParam === "starter" || planParam === "mega" ? planParam : "pro";
   const { s } = useStore();
   const L = s.lang;
   const nav = useNavigate();
@@ -34,6 +36,7 @@ export default function Signup() {
         type,
         phone: phone.replace(/\s/g, ""),
         address: address.trim(),
+        plan,
         ownerName: ownerName.trim(),
         email: email.trim() || undefined,
         lang: L,
