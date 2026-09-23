@@ -81,7 +81,8 @@
         reverse_proxy api:4000
     }
 
-    handle /ops* {
+    # `/ops` صفحة SPA — `/ops/*` فقط للـAPI (overview/tenants/support/…)
+    handle /ops/* {
         reverse_proxy api:4000
     }
 
