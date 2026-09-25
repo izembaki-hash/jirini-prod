@@ -45,7 +45,7 @@ export default function ActivitySelect() {
       <header className="flex items-center gap-2.5">
         <span aria-hidden className="grid size-10 place-items-center rounded-xl bg-growth text-lg font-bold text-white">د</span>
         <span>
-          <span className="block text-sm font-bold leading-tight">دكّان برو</span>
+          <span className="block text-sm font-bold leading-tight">جيريني</span>
           <span className="block text-[11px] text-muted">{t(L, "tagline")}</span>
         </span>
         <span className="ms-auto flex items-center gap-2">

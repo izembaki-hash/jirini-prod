@@ -2,7 +2,7 @@
 export type Lang = "ar" | "fr";
 
 const dict = {
-  appName: { ar: "دكّان برو", fr: "Doukan Pro" },
+  appName: { ar: "جيريني", fr: "Jirini" },
   tagline: { ar: "اعرف ربحك الحقيقي بضغطة واحدة", fr: "Connaissez votre vrai bénéfice en un clic" },
   restaurant: { ar: "مطعم", fr: "Restaurant" },
   shop: { ar: "محل", fr: "Boutique" },

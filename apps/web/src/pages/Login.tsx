@@ -47,7 +47,7 @@ export default function Login() {
         <div className="relative flex min-h-56 flex-col justify-end gap-3 overflow-hidden bg-growth-deep p-7 text-white">
           <div aria-hidden className="absolute -left-16 -top-16 size-56 rounded-full bg-white/10" />
           <div aria-hidden className="absolute -bottom-20 -right-10 size-64 rounded-full bg-black/10" />
-          <p className="text-sm font-bold text-white/80">دكّان برو</p>
+          <p className="text-sm font-bold text-white/80">جيريني</p>
           <p className="relative text-2xl font-bold leading-snug md:text-[28px]">{t(L, "tagline")}</p>
           <ul className="relative mt-1 flex flex-col gap-2 text-[13px] text-white/90">
             <li className="flex items-center gap-2"><TrendUp size={17} aria-hidden />{t(L, "brandLine1")}</li>
