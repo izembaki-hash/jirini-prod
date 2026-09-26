@@ -107,13 +107,15 @@ export async function buildApp(db?: DbPort) {
   app.set("trust proxy", 1);
   app.use(express.json({ limit: "2mb" }));
 
-  const loginLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
-  const publicLimit = rateLimit({ windowMs: 60 * 1000, max: 30 });
-  const signupLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 5 });
-  const sensitiveLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: Number(process.env.RATE_LIMIT_SENSITIVE ?? 30) });
+  // كل الفروق: استجابة JSON موحّدة عند تجاوز الحد (بدل نصّ Plain الافتراضي)
+  const rateHandler = (_q: unknown, res: Response, _n: unknown) => { res.status(429).json({ error: "rate_limited" }); };
+  const loginLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, handler: rateHandler });
+  const publicLimit = rateLimit({ windowMs: 60 * 1000, max: 30, handler: rateHandler });
+  const signupLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, handler: rateHandler });
+  const sensitiveLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: Number(process.env.RATE_LIMIT_SENSITIVE ?? 30), handler: rateHandler });
   // شبكة أمان عامة بسقف سخي (لا تعيق POS) — الحدود الضيقة أعلاه تبقى للمسارات الحساسة
   const globalLimit = rateLimit({
-    windowMs: 15 * 60 * 1000, max: 2000,
+    windowMs: 15 * 60 * 1000, max: 2000, handler: rateHandler,
     skip: (req) => req.path === "/health" || req.path === "/stream/kitchen",
   });
   app.use(globalLimit);
@@ -1550,12 +1552,20 @@ export async function buildApp(db?: DbPort) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     if (err instanceof z.ZodError) { res.status(400).json({ error: "validation", details: err.errors }); return; }
-    const e = err as { status?: number; message?: string; code?: string };
+    const e = err as { status?: number; message?: string; code?: string; type?: string; meta?: { model?: string } };
+    // أخطاء جسم الطلب (body-parser): JSON معطوب / حجم أكبر من الحد — رسائل معرّفة بدل نصّ إنكليزي خام
+    if (e.type === "entity.parse.failed") { res.status(400).json({ error: "bad_json" }); return; }
+    if (e.type === "entity.too.large") { res.status(413).json({ error: "payload_too_large" }); return; }
+    if (e.code === "LIMIT_FILE_SIZE") { res.status(413).json({ error: "payload_too_large" }); return; }
     if (e.status) { res.status(e.status).json({ error: e.message }); return; }
-    // سجل Prisma غير موجود (تحديث/حذف لمعرّف زائف) → 404 لا 500
-    if (e.code === "P2025") { res.status(404).json({ error: "not_found" }); return; }
-    if ((e.message === "product" || e.message === "order" || e.message === "shift" || e.message === "goal" || e.message === "recipe" || e.message === "supplier" || e.message === "purchase" || e.message === "driver" || e.message === "tenant" || e.message === "payment" || e.message === "overhead" || e.message === "customer" || e.message === "employee") ) {
-      res.status(404).json({ error: "not_found" }); return;
+    // سجل Prisma غير موجود (تحديث/حذف لمعرّف زائف) → 404 لا 500 (+الكيان للرسالة الدقيقة)
+    if (e.code === "P2025") {
+      const m = typeof e.meta?.model === "string" ? e.meta.model.toLowerCase() : undefined;
+      res.status(404).json({ error: "not_found", ...(m ? { entity: m } : {}) }); return;
+    }
+    const entities = ["product", "order", "shift", "goal", "recipe", "supplier", "purchase", "driver", "tenant", "payment", "overhead", "customer", "employee", "user"];
+    if (e.message && entities.includes(e.message)) {
+      res.status(404).json({ error: "not_found", entity: e.message }); return;
     }
     console.error("[api]", err);
     res.status(500).json({ error: "internal" });

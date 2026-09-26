@@ -8,6 +8,7 @@ import { connected, useAuth } from "../auth";
 import { t, type TKey } from "../i18n";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Empty, Field, Input, Segmented, StatusDot } from "../ui";
 import { StickerDoc, printDoc } from "../print";
+import { errToast } from "../lib/err";
 
 // 5. إدارة طلبات الزبائن + روابط QR الطاولات (مطاعم) + التوصيل والسائقون — برو/ميغا فقط.
 const STKEY: Record<OrderStatus, TKey> = {
@@ -47,7 +48,7 @@ export default function Orders() {
   const setStatus = (id: string, st: OrderStatus) => {
     const o = orders.find((x) => x.id === id);
     if (st === "onway" && o && o.kind === "delivery" && !o.driverId) toast.warning(t(L, "onwayNoDriver"));
-    if (connected()) api.setOrderStatus(id, st).catch(() => toast.error(t(L, "errStatus")));
+    if (connected()) api.setOrderStatus(id, st).catch((ex) => errToast(L, ex, t(L, "errStatus")));
     if (remoteOrders) setRemoteOrders(remoteOrders.map((x) => (x.id === id ? { ...x, status: st } : x)));
     update((p) => ({ ...p, orders: p.orders.map((x) => (x.id === id ? { ...x, status: st } : x)) }));
   };
@@ -55,7 +56,7 @@ export default function Orders() {
     const d = s.drivers.find((x) => x.id === driverId);
     if (connected()) {
       try { await api.assignDriver(id, driverId); }
-      catch { toast.error(t(L, "drvErr")); return; }
+      catch (ex) { errToast(L, ex, t(L, "drvErr")); return; }
     }
     const patch = { driverId, driverName: d?.name };
     if (remoteOrders) setRemoteOrders(remoteOrders.map((x) => (x.id === id ? { ...x, ...patch } : x)));
@@ -169,7 +170,7 @@ function DeliveryTab({ deliveries, onAssign }: { deliveries: Order[]; onAssign: 
         update((p) => ({ ...p, drivers: [...p.drivers, { id: d.id, name: d.name, phone: d.phone, vehicle: d.vehicle ?? undefined, kind: (d.kind === "external" ? "external" : "internal") as "internal" | "external", active: d.active }] }));
         toast.success(t(L, "drvAdded"));
       } catch (ex) {
-        toast.error(ex instanceof Error && (ex as { code?: string }).code === "driver_exists" ? t(L, "supExistsErr") : t(L, "errSaving"));
+        errToast(L, ex);
         return;
       }
     } else {

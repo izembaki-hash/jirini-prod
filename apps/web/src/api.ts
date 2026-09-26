@@ -20,7 +20,14 @@ export function uploadUrl(u?: string | null): string | null {
 export class ApiError extends Error {
   status: number;
   code: string;
-  constructor(status: number, code: string) { super(code); this.status = status; this.code = code; }
+  /** استجابة JSON كاملة (تحتوي entity/limit/details… يستخدمها مترجم الأخطاء) */
+  body: unknown;
+  constructor(status: number, code: string, body?: unknown) { super(code); this.status = status; this.code = code; this.body = body; }
+}
+
+function fail(r: Response, body: unknown): never {
+  const code = (body as { error?: string } | null)?.error;
+  throw new ApiError(r.status, typeof code === "string" && code ? code : "internal", body);
 }
 
 async function req<T>(path: string, init?: RequestInit, auth = true): Promise<T> {
@@ -30,11 +37,11 @@ async function req<T>(path: string, init?: RequestInit, auth = true): Promise<T>
     if (t) headers.Authorization = `Bearer ${t}`;
   }
   const r = await fetch(`${API_BASE}${path}`, { ...init, headers: { ...headers, ...(init?.headers as Record<string, string> ?? {}) } });
-  // حماية: أي استجابة HTML (خطأ توجيه بروكسي) تُرفض صراحةً بدل تسميم الحالة الصامت
   const ctype = r.headers.get("content-type") ?? "";
-  if (ctype.includes("text/html")) throw new ApiError(502, "bad_gateway");
+  // HTML فقط عند نجاح = خطأ توجيه بروكسي؛ عند الفشل نُرجع الخطأ الحقيقي (429/502…)
+  if (r.ok && ctype.includes("text/html")) throw new ApiError(502, "bad_gateway");
   const body = await r.json().catch(() => ({}));
-  if (!r.ok) throw new ApiError(r.status, (body as { error?: string }).error ?? "internal");
+  if (!r.ok) fail(r, body);
   return body as T;
 }
 
@@ -182,9 +189,9 @@ export const api = {
     if (t) headers.Authorization = `Bearer ${t}`;
     const r = await fetch(`${API_BASE}/upload`, { method: "POST", headers, body: fd });
     const ctype = r.headers.get("content-type") ?? "";
-    if (ctype.includes("text/html")) throw new ApiError(502, "bad_gateway");
+    if (r.ok && ctype.includes("text/html")) throw new ApiError(502, "bad_gateway");
     const body = await r.json().catch(() => ({}));
-    if (!r.ok) throw new ApiError(r.status, (body as { error?: string }).error ?? "internal");
+    if (!r.ok) fail(r, body);
     return body as { url: string };
   },
   shiftOpenInfo: () => req<ApiShift | null>("/shifts/open"),
@@ -228,8 +235,10 @@ async function opsReq<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: { "Content-Type": "application/json", "x-operator-key": getOperatorKey() ?? "", ...(init?.headers as Record<string, string> ?? {}) },
   });
+  const ctype = r.headers.get("content-type") ?? "";
+  if (r.ok && ctype.includes("text/html")) throw new ApiError(502, "bad_gateway");
   const body = await r.json().catch(() => ({}));
-  if (!r.ok) throw new ApiError(r.status, (body as { error?: string }).error ?? "internal");
+  if (!r.ok) fail(r, body);
   return body as T;
 }
 

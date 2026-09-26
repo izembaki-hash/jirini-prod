@@ -598,6 +598,17 @@ async function main() {
   const ovPlanType = r.json as { byPlanType?: Record<string, Record<string, number>> };
   ok("overview byPlanType restaurant+shop", r.status === 200 && !!ovPlanType.byPlanType && typeof ovPlanType.byPlanType.restaurant?.pro === "number" && typeof ovPlanType.byPlanType.shop?.starter === "number");
 
+  // رسائل الأخطاء الدقيقة: 404 مع كيان، JSON معطوب، جسم أكبر من الحد
+  r = await call("DELETE", "/customers/00000000-0000-0000-0000-000000000000", undefined, ownerTok2);
+  ok("not_found carries entity", r.status === 404 && r.json.error === "not_found" && r.json.entity === "customer",
+    `got ${JSON.stringify(r.json)}`);
+  const badRes = await fetch(`${BASE}/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{" });
+  const badJson = await badRes.json().catch(() => ({}) as unknown) as { error?: string };
+  ok("bad json → bad_json", badRes.status === 400 && badJson.error === "bad_json", `got ${badRes.status} ${JSON.stringify(badJson)}`);
+  const bigRes = await fetch(`${BASE}/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ slug: "x".repeat(2_100_000) }) });
+  const bigJson = await bigRes.json().catch(() => ({}) as unknown) as { error?: string };
+  ok("oversize body → payload_too_large", bigRes.status === 413 && bigJson.error === "payload_too_large", `got ${bigRes.status} ${JSON.stringify(bigJson)}`);
+
   server.close();
   console.log(failures === 0 ? "ALL GREEN" : `${failures} FAILURES`);
   process.exit(failures === 0 ? 0 : 1);

@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { fmtDzd, useStore, displayName } from "../store";
-import { ApiError, api } from "../api";
+import { api } from "../api";
 import { connected } from "../auth";
 import { t } from "../i18n";
 import { Button, Card, CardContent, CardHeader, CardTitle, Empty, Field, Input } from "../ui";
+import { errToast } from "../lib/err";
 
 // 9. الفروع: إضافة ضمن حد الخطة + مقارنة + نقل مخزون.
 const LIMIT: Record<string, number> = { starter: 1, pro: 2, mega: 99 };
@@ -36,7 +37,7 @@ export default function Branches() {
         const b = await api.branchesCreate({ name: name.trim() });
         update((p) => ({ ...p, branches: [...p.branches, b.name] }));
       } catch (ex) {
-        toast.error(ex instanceof ApiError && ex.status === 403 ? t(L, "brUpgradeH") : t(L, "errSaving"));
+        errToast(L, ex, t(L, "brUpgradeH"));
         return;
       }
     } else {

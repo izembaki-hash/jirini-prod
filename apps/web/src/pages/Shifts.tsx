@@ -5,6 +5,7 @@ import { api, currentBranch, type ApiShift } from "../api";
 import { connected, useAuth } from "../auth";
 import { t } from "../i18n";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Field, Input } from "../ui";
+import { errToast } from "../lib/err";
 
 // 4ب. الورديات وإغلاق الصندوق: فتح → تتبع لحظي → إغلاق بعدّ فعلي + فرق.
 const toLocal = (s: ApiShift): Shift => ({
@@ -47,12 +48,12 @@ export default function Shifts() {
     e.preventDefault();
     if (connected()) {
       const br = currentBranch();
-      if (!br) { toast.error(t(L, "errSaving")); return; }
+      if (!br) { toast.error(t(L, "errPickBranch")); return; }
       try {
         const created = await api.shiftOpen(br, Number(opening) || 0, by.trim() || "cashier");
         update((p) => ({ ...p, shift: toLocal(created) }));
         toast.success(t(L, "openShiftB"));
-      } catch { toast.error(t(L, "errSaving")); }
+      } catch (ex) { errToast(L, ex, t(L, "errSaving")); }
       return;
     }
     update((p) => ({ ...p, shift: { id: `sh${Date.now()}`, by, openedAt: new Date().toISOString(), closedAt: null, opening: Number(opening) || 0, closing: null, note: "" } }));
@@ -68,7 +69,7 @@ export default function Shifts() {
         update((p) => ({ ...p, shifts: [toLocal(r.shift), ...p.shifts], shift: null }));
         if (canReview) api.shiftsList().then((l) => setClosedRemote(l.map(toLocal))).catch(() => null);
       } catch (ex) {
-        toast.error(t(L, "errSaving"));
+        errToast(L, ex, t(L, "errSaving"));
         return;
       }
     } else {

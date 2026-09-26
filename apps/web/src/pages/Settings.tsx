@@ -8,6 +8,7 @@ import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Field, Input }
 import { ImagePicker } from "../components/ImagePicker";
 import { btSupported, btSavedName, btForget, btTestPrint, btPair, btPrefs, btSavePrefs, btErrorMessage } from "../lib/btprinter";
 import { t, type TKey } from "../i18n";
+import { errMsg, errToast } from "../lib/err";
 
 // 11. الإعدادات: اشتراك + ضرائب + أمان + نسخ احتياطي + أجهزة + أوفر تايم + CRM + لغة.
 const PLAN_META: { id: PlanId; key: TKey; price: number }[] = [
@@ -126,7 +127,7 @@ function BillingPanel() {
       });
       window.location.href = r.paymentUrl;
     } catch (ex) {
-      toast.error(ex instanceof ApiError && ex.status === 501 ? t(L, "billNotConf") : t(L, "errSaving"));
+      toast.error(ex instanceof ApiError && ex.status === 501 ? t(L, "billNotConf") : errMsg(L, ex, t(L, "errSaving")));
       setBusy(false);
     }
   };
@@ -138,8 +139,8 @@ function BillingPanel() {
       toast.success(t(L, "billPendingNote"));
       setRef("");
       api.billingStatus().then((r) => setInfo(r)).catch(() => null);
-    } catch {
-      toast.error(t(L, "errSaving"));
+    } catch (ex) {
+      errToast(L, ex, t(L, "errSaving"));
     }
   };
 
@@ -248,17 +249,17 @@ function OverheadsCard() {
     try {
       const o = await api.createOverhead({ name: name.trim(), kind, monthly: Number(monthly) });
       update((p) => ({ ...p, overheads: [...p.overheads, { id: o.id, name: o.name, kind: o.kind, monthly: o.monthly, active: o.active }] }));
-    } catch { toast.error(t(L, "errSaving")); return; }
+    } catch (ex) { errToast(L, ex, t(L, "errSaving")); return; }
     setName(""); setMonthly("");
   };
 
   const toggle = async (id: string, active: boolean) => {
-    try { await api.updateOverhead(id, { active }); } catch { toast.error(t(L, "errSaving")); return; }
+    try { await api.updateOverhead(id, { active }); } catch (ex) { errToast(L, ex, t(L, "errSaving")); return; }
     update((p) => ({ ...p, overheads: p.overheads.map((x) => x.id === id ? { ...x, active } : x) }));
   };
 
   const remove = async (id: string) => {
-    try { await api.deleteOverhead(id); } catch { toast.error(t(L, "errSaving")); return; }
+    try { await api.deleteOverhead(id); } catch (ex) { errToast(L, ex, t(L, "errSaving")); return; }
     update((p) => ({ ...p, overheads: p.overheads.filter((x) => x.id !== id) }));
   };
 
@@ -301,7 +302,7 @@ function TablesCard() {
     const v = Math.min(60, Math.max(1, n));
     update((p) => ({ ...p, tables: v }));
     try { await api.tenantPatch({ tablesCount: v }); }
-    catch { toast.error(t(L, "errSaving")); }
+    catch (ex) { errToast(L, ex, t(L, "errSaving")); }
   };
   return (
     <Card><CardHeader><CardTitle>{t(L, "tablesT")}</CardTitle></CardHeader>
@@ -333,14 +334,14 @@ function MerchantCard() {
     try {
       await api.tenantPatch({ name: name.trim(), phone: phone.trim(), address: address.trim() });
       toast.success(t(L, "merchSaved"));
-    } catch { toast.error(t(L, "errSaving")); }
+    } catch (ex) { errToast(L, ex, t(L, "errSaving")); }
     setBusy(false);
   };
 
   const saveLogo = async (url: string | null) => {
     update((p) => ({ ...p, shopLogo: url ?? "" }));
     try { await api.tenantPatch({ logoUrl: url ?? "" }); }
-    catch { toast.error(t(L, "errSaving")); }
+    catch (ex) { errToast(L, ex, t(L, "errSaving")); }
   };
 
   return (

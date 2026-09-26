@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PencilSimple, X } from "@phosphor-icons/react";
 import { fmtDzd, useStore, displayName, type Product } from "../store";
-import { ApiError, api, currentBranch, type ApiProduct } from "../api";
+import { api, currentBranch, type ApiProduct } from "../api";
+import { errToast } from "../lib/err";
 import { connected } from "../auth";
 import { t } from "../i18n";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Empty, Field, Input, Segmented, cn } from "../ui";
@@ -47,14 +48,6 @@ export default function Inventory() {
       {tab === "purchases" && <PurchasesTab />}
     </div>
   );
-}
-
-function errToast(L: "ar" | "fr", e: unknown, fallback: string) {
-  if (e instanceof ApiError) {
-    if (e.code === "supplier_exists") { toast.error(t(L, "supExistsErr")); return; }
-    if (e.code === "overpay") { toast.error(t(L, "overpayErr")); return; }
-  }
-  toast.error(fallback || t(L, "errSaving"));
 }
 
 // ─── تنبيهات المخزون (الخادم) ───
@@ -260,7 +253,7 @@ function ProductsTab() {
       expiryDate: !isResto && expiry ? expiry : undefined,
       wholesalePrice: !isResto && wholesale ? Number(wholesale) || 0 : undefined,
     };
-    if (!row.branchId) { toast.error(t(L, "errSaving")); return; }
+    if (!row.branchId) { toast.error(t(L, "errPickBranch")); return; }
     if (connected()) {
       try {
         await api.createProduct({ ...row });
@@ -654,7 +647,7 @@ function PurchasesTab() {
     if (lines.length === 0) return;
     const paidNow = personal ? total : Number(paid) || 0;
     if (personal && total <= 0) return;
-    if (!personal && !effSup) { setErr(t(L, "errSaving")); return; }
+    if (!personal && !effSup) { setErr(t(L, "errPickSupplier")); return; }
     if (personal && paidNow < total - 1e-9) { setErr(t(L, "purPersonalUnpaid")); return; }
     if (connected()) {
       try {

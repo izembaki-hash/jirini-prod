@@ -5,6 +5,7 @@ import { useStore } from "../store";
 import { ApiError, api } from "../api";
 import { t } from "../i18n";
 import { Button, Card, CardContent, CardHeader, CardTitle, Field, Input, Steps } from "../ui";
+import { errMsg } from "../lib/err";
 
 // ضبط كلمة سر الدخول بعد الدفع الناجح (مستأجر جديد).
 // لا توكن مطلوب — التحقق عبر paymentId في الرابط.
@@ -34,11 +35,9 @@ export default function SetPassword() {
       // مرّر slug في الـURL ليُملأ نموذج الدخول تلقائياً
       setTimeout(() => nav(`/login?slug=${encodeURIComponent(r.slug)}`), 800);
     } catch (ex) {
-      setErr(ex instanceof ApiError
-        ? ex.status === 402 ? t(L, "spUnpaid")
-        : ex.status === 404 ? t(L, "spNotFound")
-        : `${t(L, "errSaving")} (${ex.code})`
-        : t(L, "eConn"));
+      setErr(ex instanceof ApiError && ex.status === 402 ? t(L, "spUnpaid")
+        : ex instanceof ApiError && ex.status === 404 ? t(L, "spNotFound")
+        : errMsg(L, ex));
     } finally { setBusy(false); }
   };
 

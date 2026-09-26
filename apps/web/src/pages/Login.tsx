@@ -6,6 +6,7 @@ import { useAuth } from "../auth";
 import { useStore } from "../store";
 import { t } from "../i18n";
 import { Button, Card, CardContent, Field, Input, Segmented } from "../ui";
+import { errMsg } from "../lib/err";
 
 // الدخول للإنتاج: slug النشاط + (هاتف الموظف + كلمة السر) أو (الكود السري للعمال).
 export default function Login() {
@@ -34,9 +35,7 @@ export default function Login() {
       }
       nav("/app");
     } catch (ex) {
-      setErr(ex instanceof ApiError
-        ? ex.status === 401 ? t(L, "eBad") : `${t(L, "eSrv")} (${ex.code})`
-        : t(L, "eConn"));
+      setErr(ex instanceof ApiError && ex.status === 401 ? t(L, "eBad") : errMsg(L, ex));
     } finally { setBusy(false); }
   };
 

@@ -10,6 +10,7 @@ import { useAuth, connected, canSee } from "../auth";
 import { api, setBranch, ApiError, supportSubmit, uploadUrl } from "../api";
 import { t, type Lang } from "../i18n";
 import { Button, cn } from "../ui";
+import { errMsg } from "../lib/err";
 
 const PRICE_OF: Record<PlanId, number> = { starter: 2500, pro: 3000, mega: 4500 };
 const roleLabel = (role: string, L: Lang) =>
@@ -46,8 +47,8 @@ function HelpDialog({ open, onClose, lang }: { open: boolean; onClose: () => voi
       toast.success(t(lang, "helpSent"));
       setMsg(""); setContact("");
       onClose();
-    } catch {
-      toast.error(t(lang, "helpFail"));
+    } catch (e) {
+      toast.error(errMsg(lang, e, t(lang, "helpFail")));
     } finally { setBusy(false); }
   };
   return (

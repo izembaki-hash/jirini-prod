@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Plus, X } from "@phosphor-icons/react";
 import { fmtDzd, useStore, displayName, catName } from "../store";
-import { ApiError, api, currentBranch, uploadUrl } from "../api";
+import { api, currentBranch, uploadUrl } from "../api";
 import { connected } from "../auth";
 import { t } from "../i18n";
 import { Badge, Button, Card, Empty, Field, Input, Segmented } from "../ui";
@@ -11,6 +11,7 @@ import { ImagePicker } from "../components/ImagePicker";
 import { InvoiceDoc, printDoc, shopOf } from "../print";
 import { btSupported, btSavedName, btPrintReceipt, btErrorMessage } from "../lib/btprinter";
 import type { Order } from "../store";
+import { errMsg } from "../lib/err";
 
 // 4. نقطة البيع: سريعة باللمس، بحث بالاسم/الباركود (يعمل 100% بدون قارئ).
 
@@ -150,7 +151,7 @@ export default function Pos() {
     try {
       let id: string;
       if (connected()) {
-        if (!row.branchId) { toast.error(t(L, "errSaving")); setQaBusy(false); return; }
+        if (!row.branchId) { toast.error(t(L, "errPickBranch")); setQaBusy(false); return; }
         const created = await api.createProduct({ ...row });
         id = created.id;
         update((p) => ({
@@ -179,7 +180,7 @@ export default function Pos() {
       setQaName(""); setQaPrice(""); setQaCat(""); setQaImg(null);
       setQaOpen(false);
     } catch (ex) {
-      setQaErr(ex instanceof ApiError ? `${t(L, "errSaving")} (${ex.code})` : t(L, "eConn"));
+      setQaErr(errMsg(L, ex));
     } finally { setQaBusy(false); }
   };
 
@@ -217,9 +218,7 @@ export default function Pos() {
         toast.success(`${t(L, "soldOk")} #${created.num} — ${fmtDzd(created.total)}`);
         for (const w of created.warnings ?? []) toast.warning(`${t(L, "warnIng")}${w.name} (${t(L, "shortBy")} ${w.missing})`);
       } catch (e) {
-        toast.error(e instanceof ApiError && e.code.startsWith("insufficient_stock")
-          ? `${t(L, "insStock")}${e.code.split(":")[1] ?? ""}`
-          : t(L, "sendFailApi"));
+        toast.error(errMsg(L, e, t(L, "sendFailApi")));
       }
       return;
     }

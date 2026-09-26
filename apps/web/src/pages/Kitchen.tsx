@@ -5,6 +5,7 @@ import { api, kitchenStream, type ApiOrder } from "../api";
 import { connected } from "../auth";
 import { t } from "../i18n";
 import { Badge, Button, Card, Empty } from "../ui";
+import { errToast } from "../lib/err";
 
 // شاشة المطبخ اللحظية: تستقبل من الكاشير وQR الزبون. تحديث تلقائي كل ثانيتين (onSnapshot في Firebase).
 export default function Kitchen() {
@@ -58,7 +59,7 @@ export default function Kitchen() {
     c === "preparing" ? o.status === "preparing" || o.status === "pending" : o.status === c;
 
   const move = (id: string, st: OrderStatus) => {
-    if (connected()) api.setOrderStatus(id, st).catch(() => toast.error(t(L, "errStatus")));
+    if (connected()) api.setOrderStatus(id, st).catch((ex) => errToast(L, ex, t(L, "errStatus")));
     update((p) => ({ ...p, orders: p.orders.map((o) => (o.id === id ? { ...o, status: st } : o)) }));
   };
 

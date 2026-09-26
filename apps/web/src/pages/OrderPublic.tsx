@@ -5,6 +5,7 @@ import { t } from "../i18n";
 import { toast } from "sonner";
 import { API_BASE, ApiError, api } from "../api";
 import { Badge, Button, Card, Empty, Field, Input } from "../ui";
+import { errMsg } from "../lib/err";
 
 // 5ب. بوابة الزبون العامة (PWA): ?t=رقم الطاولة أو طلب توصيل. بدون تسجيل دخول.
 // متصلة بالخادم عند ضبط VITE_API_URL، وإلا وضع تجريبي محلي.
@@ -89,7 +90,7 @@ export default function OrderPublic() {
           refreshMenu();
           toast.error(t(L, "menuChanged"));
         } else {
-          toast.error(t(L, "sendFail"));
+          toast.error(errMsg(L, e, t(L, "sendFail")));
         }
       }
       return;

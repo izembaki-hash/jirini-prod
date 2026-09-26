@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useStore } from "../store";
-import { ApiError, api } from "../api";
+import { api } from "../api";
 import { t } from "../i18n";
 import { Button, Card, CardContent, CardHeader, CardTitle, CardDesc, Field, Input, Steps } from "../ui";
+import { errMsg } from "../lib/err";
 
 // معلومات النشاط — تسبق الدفع. لا كلمة سر هنا (تُضبط بعد الدفع).
 export default function Signup() {
@@ -52,7 +53,7 @@ export default function Signup() {
       });
       nav(`/checkout?${q.toString()}`);
     } catch (ex) {
-      setErr(ex instanceof ApiError ? `${t(L, "errSaving")} (${ex.code})` : t(L, "eConn"));
+      setErr(errMsg(L, ex));
     } finally { setBusy(false); }
   };
 

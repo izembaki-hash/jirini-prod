@@ -1,10 +1,11 @@
 import { useRef, useState } from "react";
 import { CameraPlus, Trash } from "@phosphor-icons/react";
-import { ApiError, api, uploadUrl } from "../api";
+import { api, uploadUrl } from "../api";
 import { connected } from "../auth";
 import { useStore } from "../store";
 import { t } from "../i18n";
 import { cn } from "../ui";
+import { errMsg } from "../lib/err";
 
 // زر رفع صورة منتج/شعار: معاينة + رفع للخادم عند الاتصال، DataURL محلياً في التجريبي.
 export function ImagePicker({ value, onChange, label }: { value: string | null; onChange: (url: string | null) => void; label?: string }) {
@@ -37,7 +38,7 @@ export function ImagePicker({ value, onChange, label }: { value: string | null; 
         onChange(data);
       }
     } catch (e) {
-      setErr(e instanceof ApiError ? `${t(L, "errSaving")} (${e.code})` : t(L, "eConn"));
+      setErr(errMsg(L, e));
     } finally { setBusy(false); }
   };
 

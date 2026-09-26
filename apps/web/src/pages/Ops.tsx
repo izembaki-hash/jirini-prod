@@ -2,8 +2,13 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { fmtDzd, useStore } from "../store";
 import { API_BASE, ApiError, getOperatorKey, setOperatorKey, ops, type OpsOverview, type OpsTenant, type OpsSupportTicket } from "../api";
-import { t } from "../i18n";
+import { t, type Lang } from "../i18n";
+import { errMsg } from "../lib/err";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Empty, Field, Input, Segmented, Stat } from "../ui";
+
+function opsErr(L: Lang, e: unknown) {
+  toast.error(e instanceof ApiError && (e.status === 401 || e.status === 403) ? t(L, "erOpsKey") : errMsg(L, e, t(L, "eSrv")));
+}
 
 // لوحة مشغّل المنصة: كل المستأجرين والمستخدمين والمدفوعات + إجراءات.
 // مستقلة عن Shell (مستوى المنصة لا المستأجر). تتطلب API + مفتاح المشغّل.
@@ -180,15 +185,15 @@ function TenantsTab() {
   const [sel, setSel] = useState<string | null>(null);
   const [detail, setDetail] = useState<Record<string, unknown> | null>(null);
   const [months, setMonths] = useState("1");
-  const load = () => ops.tenants().then(setList).catch(() => toast.error(t(L, "eSrv")));
+  const load = () => ops.tenants().then(setList).catch((e) => opsErr(L, e));
   useEffect(() => { load(); }, []);
   const open = async (id: string) => {
     setSel(id);
-    try { setDetail(await ops.tenant(id)); } catch { toast.error(t(L, "eSrv")); }
+    try { setDetail(await ops.tenant(id)); } catch (e) { opsErr(L, e); }
   };
   const act = async (fn: () => Promise<unknown>, msg: string) => {
     try { await fn(); toast.success(msg); load(); if (sel) open(sel); }
-    catch { toast.error(t(L, "eSrv")); }
+    catch (e) { opsErr(L, e); }
   };
 
   return (
@@ -282,7 +287,7 @@ function PaymentsTab() {
   const L = s.lang;
   const [f, setF] = useState("");
   const [list, setList] = useState<{ id: string; tenantSlug: string; tenantName: string; plan: string; months: number; amountDzd: number; status: string; ref: string; createdAt: string }[] | null>(null);
-  useEffect(() => { ops.payments(f || undefined).then(setList).catch(() => toast.error(t(L, "eSrv"))); }, [f]);
+  useEffect(() => { ops.payments(f || undefined).then(setList).catch((e) => opsErr(L, e)); }, [f]);
   return (
     <Card>
       <CardHeader><CardTitle>{t(L, "tabPayments")}</CardTitle></CardHeader>
@@ -317,12 +322,12 @@ function SupportTab() {
   const L = s.lang;
   const [list, setList] = useState<OpsSupportTicket[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const load = () => ops.tickets().then(setList).catch(() => toast.error(t(L, "eSrv")));
+  const load = () => ops.tickets().then(setList).catch((e) => opsErr(L, e));
   useEffect(() => { load(); }, []);
   const resolve = async (id: string) => {
     setBusy(id);
     try { await ops.resolveTicket(id); await load(); }
-    catch { toast.error(t(L, "eSrv")); }
+    catch (e) { opsErr(L, e); }
     finally { setBusy(null); }
   };
   if (!list) return <p className="text-sm text-muted">…</p>;
@@ -359,7 +364,7 @@ function SystemTab() {
   const { s } = useStore();
   const L = s.lang;
   const [h, setH] = useState<{ db: string; uptimeSec: number; time: string; env: Record<string, unknown> } | null>(null);
-  useEffect(() => { ops.health().then(setH).catch(() => toast.error(t(L, "eSrv"))); }, []);
+  useEffect(() => { ops.health().then(setH).catch((e) => opsErr(L, e)); }, []);
   if (!h) return <p className="text-sm text-muted">…</p>;
   const up = `${Math.floor(h.uptimeSec / 3600)}h ${Math.floor((h.uptimeSec % 3600) / 60)}m`;
   return (

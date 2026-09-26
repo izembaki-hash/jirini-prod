@@ -8,6 +8,7 @@ import { connected } from "../auth";
 import { t } from "../i18n";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Empty, Field, Input } from "../ui";
 import type { ApiCustomerPayment } from "../api";
+import { errToast } from "../lib/err";
 
 // 6. Ø³Ø¬Ù„ Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡ â€” Ø§Ø®ØªÙŠØ§Ø±ÙŠ Ø¨Ø§Ù„ÙƒØ§Ù…Ù„ (ØªÙØ¹ÙŠÙ„/ØªØ¹Ø·ÙŠÙ„ Ù…Ù† Ø§Ù„Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª).
 export default function Customers() {
@@ -36,7 +37,7 @@ export default function Customers() {
       update((p) => ({ ...p, customers: p.customers.map((c) => c.id === id ? { ...c, balance: r.customer.balance } : c) }));
       toast.success(t(L, "paidOk"));
       setPayingId(null); setAmount("");
-    } catch { toast.error(t(L, "errSaving")); }
+    } catch (ex) { errToast(L, ex, t(L, "errSaving")); }
   };
 
   const showHist = async (id: string) => {
@@ -44,13 +45,13 @@ export default function Customers() {
     try {
       setPayHist(await api.customerPayments(id));
       setHistId(id);
-    } catch { toast.error(t(L, "errSaving")); }
+    } catch (ex) { errToast(L, ex, t(L, "errSaving")); }
   };
 
   const delCust = async (id: string) => {
     if (!window.confirm(t(L, "custDelConfirm"))) return;
     if (connected()) {
-      try { await api.customersDelete(id); } catch { toast.error(t(L, "errSaving")); return; }
+      try { await api.customersDelete(id); } catch (ex) { errToast(L, ex, t(L, "errSaving")); return; }
     }
     update((p) => ({ ...p, customers: p.customers.filter((c) => c.id !== id) }));
     if (ledgerId === id) setHistId(null);
@@ -64,7 +65,7 @@ export default function Customers() {
       try {
         const c = await api.customersCreate({ name: name.trim(), phone: phone.trim() });
         update((p) => ({ ...p, customers: [...p.customers, { id: c.id, name: c.name, phone: c.phone, address: c.address ?? undefined, balance: c.balance }] }));
-      } catch (ex) { toast.error(t(L, "errSaving")); return; }
+      } catch (ex) { errToast(L, ex, t(L, "errSaving")); return; }
     } else {
       update((p) => ({ ...p, customers: [...p.customers, { id: `c${Date.now()}`, name: name.trim(), phone: phone.trim() }] }));
     }

@@ -6,6 +6,7 @@ import { api, APP_PAGES, type ApiEmployee, type ApiLoginUser } from "../api";
 import { connected, useAuth } from "../auth";
 import { t, type TKey } from "../i18n";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Field, Input, cn } from "../ui";
+import { errToast } from "../lib/err";
 
 // 7. العمال: سجل + مسمى حر + حضور يومي (كامل/جزئي/غياب) + أجر الجزئي أساساً (الكامل ×2) + سلف = صافي.
 const ROLE_KEY: Record<Role, TKey> = { owner: "roleOwner", manager: "roleManager", cashier: "roleCashier", cook: "roleCook" };
@@ -76,7 +77,7 @@ export default function Staff() {
           att: [...p.att.filter((x) => !(x.emp === a.employeeId && x.date === a.date)),
             { id: a.id, emp: a.employeeId, date: a.date, status: a.status }],
         }));
-      } catch { toast.error(t(L, "errSaving")); }
+      } catch (ex) { errToast(L, ex, t(L, "errSaving")); }
       return;
     }
     update((p) => ({
@@ -107,7 +108,7 @@ export default function Staff() {
         if (users) setAccounts(users);
         setName(""); setTitle(""); setPhone(""); setPassword("");
         void r;
-      } catch { toast.error(t(L, "errSaving")); }
+      } catch (ex) { errToast(L, ex, t(L, "errSaving")); }
       return;
     }
     update((p) => ({ ...p, employees: [...p.employees, { id: `e${Date.now()}`, name: name.trim(), role, title: ttl, half: hw, hired: todayKey() }] }));
@@ -121,7 +122,7 @@ export default function Staff() {
       try {
         const a = await api.advanceCreate({ employeeId: empId, amount: amt, note: advNote.trim() || undefined });
         update((p) => ({ ...p, advances: [toLocalAdv(a), ...p.advances] }));
-      } catch { toast.error(t(L, "errSaving")); return; }
+      } catch (ex) { errToast(L, ex, t(L, "errSaving")); return; }
     } else {
       update((p) => ({ ...p, advances: [{ id: `ad${Date.now()}`, emp: empId, amount: amt, date: todayKey(), note: advNote.trim() || undefined }, ...p.advances] }));
     }
@@ -130,7 +131,7 @@ export default function Staff() {
 
   const delAdv = async (id: string) => {
     if (connected()) {
-      try { await api.advanceDelete(id); } catch { toast.error(t(L, "errSaving")); return; }
+      try { await api.advanceDelete(id); } catch (ex) { errToast(L, ex, t(L, "errSaving")); return; }
     }
     update((p) => ({ ...p, advances: p.advances.filter((a) => a.id !== id) }));
   };
@@ -138,7 +139,7 @@ export default function Staff() {
   const delEmp = async (e: Employee) => {
     if (!window.confirm(t(L, "empDelConfirm"))) return;
     if (connected()) {
-      try { await api.employeeDelete(e.id); } catch { toast.error(t(L, "errSaving")); return; }
+      try { await api.employeeDelete(e.id); } catch (ex) { errToast(L, ex, t(L, "errSaving")); return; }
     }
     update((p) => ({
       ...p,
@@ -312,7 +313,7 @@ export default function Staff() {
               const r = await api.userPagesUpdate(userId, next.length === APP_PAGES.length ? null : next);
               setAccounts((a) => a.map((u) => (u.id === userId ? { ...u, pages: r.pages } : u)));
               toast.success(t(L, "pinSaved"));
-            } catch { toast.error(t(L, "errSaving")); }
+            } catch (ex) { errToast(L, ex, t(L, "errSaving")); }
             finally { setPagesBusy(null); }
           }}
           onSetAll={async (userId, all) => {
@@ -321,7 +322,7 @@ export default function Staff() {
               const r = await api.userPagesUpdate(userId, all ? null : []);
               setAccounts((a) => a.map((u) => (u.id === userId ? { ...u, pages: r.pages } : u)));
               toast.success(t(L, "pinSaved"));
-            } catch { toast.error(t(L, "errSaving")); }
+            } catch (ex) { errToast(L, ex, t(L, "errSaving")); }
             finally { setPagesBusy(null); }
           }}
           onGenPin={async (userId) => {
@@ -329,11 +330,11 @@ export default function Staff() {
               const r = await api.userPinCreate(userId);
               setFreshPin({ userId, pin: r.pin });
               setAccounts((a) => a.map((u) => (u.id === userId ? { ...u, hasPin: true } : u)));
-            } catch { toast.error(t(L, "errSaving")); }
+            } catch (ex) { errToast(L, ex, t(L, "errSaving")); }
           }}
           onCopyPin={async (pin) => {
             try { await navigator.clipboard.writeText(pin); toast.success(t(L, "pinCopied")); }
-            catch { toast.error(t(L, "errSaving")); }
+            catch (ex) { errToast(L, ex, t(L, "errSaving")); }
           }}
         />
       )}
@@ -348,7 +349,7 @@ export default function Staff() {
               try {
                 const u = await api.updateEmployee(editing.id, patch);
                 update((p) => ({ ...p, employees: p.employees.map((x) => (x.id === editing.id ? toLocalEmp(u) : x)) }));
-              } catch { toast.error(t(L, "errSaving")); return false; }
+              } catch (ex) { errToast(L, ex, t(L, "errSaving")); return false; }
             } else {
               update((p) => ({ ...p, employees: p.employees.map((x) => (x.id === editing.id ? { ...x, name: patch.name, title: patch.title ?? undefined, half: patch.half } : x)) }));
             }

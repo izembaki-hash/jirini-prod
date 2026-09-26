@@ -4,6 +4,7 @@ import { useStore } from "../store";
 import { ApiError, api } from "../api";
 import { t } from "../i18n";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Steps, cn } from "../ui";
+import { errMsg } from "../lib/err";
 
 // صفحة الدفع بعد إدخال معلومات النشاط — خطة + دورة + تحويل لـSofizPay.
 const PLANS = [
@@ -73,11 +74,7 @@ export default function Checkout() {
       // حوّل لصفحة CIB/Edahabia
       window.location.href = r.paymentUrl;
     } catch (ex) {
-      setErr(ex instanceof ApiError
-        ? ex.status === 502 ? `${t(L, "errSaving")} (${ex.code})`
-        : ex.status === 501 ? t(L, "billNotConf")
-        : `${t(L, "errSaving")} (${ex.code})`
-        : t(L, "eConn"));
+      setErr(ex instanceof ApiError && ex.status === 501 ? t(L, "billNotConf") : errMsg(L, ex));
       setBusy(false);
     }
   };

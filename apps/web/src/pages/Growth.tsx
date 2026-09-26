@@ -6,6 +6,7 @@ import { api } from "../api";
 import { connected } from "../auth";
 import { t, type Lang } from "../i18n";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Empty, Field, Input, Progress } from "../ui";
+import { errToast } from "../lib/err";
 
 // 10. مخطط النمو المالي: هدف + تحليل الربح الشهري + خطة ادخار + شريط تقدم + مراحل.
 type PresetKey = "gBranch" | "gCar" | "gEquip" | "gFree";
@@ -38,7 +39,7 @@ export default function Growth() {
       try {
         const g = await api.goalsCreate({ title, target: Number(target) || 0, monthly: Number(monthly) || 0 });
         update((p) => ({ ...p, goals: [{ id: g.id, title: g.title, target: g.target, saved: g.saved, monthly: g.monthly }, ...p.goals] }));
-      } catch { toast.error(t(L, "errSaving")); }
+      } catch (ex) { errToast(L, ex, t(L, "errSaving")); }
       return;
     }
     update((p) => ({ ...p, goals: [{ id: `g${Date.now()}`, title, target: Number(target) || 0, saved: 0, monthly: Number(monthly) || 0 }, ...p.goals] }));
@@ -52,7 +53,7 @@ export default function Growth() {
       try {
         await api.goalsUpdate(id, { saved });
         update((prev) => ({ ...prev, goals: prev.goals.map((x) => (x.id === id ? { ...x, saved } : x)) }));
-      } catch { toast.error(t(L, "errSaving")); }
+      } catch (ex) { errToast(L, ex, t(L, "errSaving")); }
       return;
     }
     update((prev) => ({ ...prev, goals: prev.goals.map((x) => (x.id === id ? { ...x, saved } : x)) }));
@@ -61,7 +62,7 @@ export default function Growth() {
   const remove = async (id: string) => {
     if (connected()) {
       try { await api.goalsDelete(id); }
-      catch { toast.error(t(L, "errSaving")); return; }
+      catch (ex) { errToast(L, ex, t(L, "errSaving")); return; }
     }
     update((prev) => ({ ...prev, goals: prev.goals.filter((x) => x.id !== id) }));
   };
