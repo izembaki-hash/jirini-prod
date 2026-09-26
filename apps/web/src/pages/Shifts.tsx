@@ -86,6 +86,7 @@ export default function Shifts() {
       <Card>
         <CardHeader><CardTitle>{t(L, "shifts")}</CardTitle></CardHeader>
         <CardContent className="flex flex-col gap-4">
+          <p className="text-sm leading-relaxed text-muted">{t(L, "shiftsDesc")}</p>
           {!open ? (
             <form className="flex flex-col gap-4" onSubmit={doOpen}>
               <Field label={t(L, "cashierName")} id="by"><Input id="by" value={by} onChange={(e) => setBy(e.target.value)} /></Field>

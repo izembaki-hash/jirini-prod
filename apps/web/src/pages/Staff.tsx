@@ -135,6 +135,20 @@ export default function Staff() {
     update((p) => ({ ...p, advances: p.advances.filter((a) => a.id !== id) }));
   };
 
+  const delEmp = async (e: Employee) => {
+    if (!window.confirm(t(L, "empDelConfirm"))) return;
+    if (connected()) {
+      try { await api.employeeDelete(e.id); } catch { toast.error(t(L, "errSaving")); return; }
+    }
+    update((p) => ({
+      ...p,
+      employees: p.employees.filter((x) => x.id !== e.id),
+      advances: p.advances.filter((a) => a.emp !== e.id),
+      att: p.att.filter((a) => a.emp !== e.id),
+    }));
+    if (editing?.id === e.id) setEditing(null);
+  };
+
   return (
     <div className="flex flex-col gap-4">
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1.5fr]">
@@ -225,6 +239,10 @@ export default function Staff() {
                     <button onClick={() => setEditing(e)} aria-label={`${t(L, "editEmp")} ${e.name}`}
                       className="btn-press grid size-10 shrink-0 touch-manipulation place-items-center rounded-[10px] border border-line">
                       <PencilSimple size={17} aria-hidden />
+                    </button>
+                    <button onClick={() => delEmp(e)} aria-label={`${t(L, "del")} ${e.name}`}
+                      className="btn-press grid size-10 shrink-0 touch-manipulation place-items-center rounded-[10px] border border-line text-ember">
+                      <Trash size={17} aria-hidden />
                     </button>
                   </div>
                   <div className="grid grid-cols-3 gap-2 text-center">

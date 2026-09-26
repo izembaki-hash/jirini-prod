@@ -122,6 +122,7 @@ export interface DbPort {
   listEmployees(tenantId: string): Promise<EmployeeRow[]>;
   createEmployee(e: Omit<EmployeeRow, "id">): Promise<EmployeeRow>;
   updateEmployee(tenantId: string, id: string, patch: Partial<EmployeeRow>): Promise<EmployeeRow>;
+  deleteEmployee(tenantId: string, id: string): Promise<void>;
   // سلف الموظفين
   listAdvances(tenantId: string, employeeId?: string): Promise<SalaryAdvanceRow[]>;
   createAdvance(a: Omit<SalaryAdvanceRow, "id">): Promise<SalaryAdvanceRow>;
@@ -153,6 +154,7 @@ export interface DbPort {
   listCustomers(tenantId: string): Promise<CustomerRow[]>;
   createCustomer(c: Omit<CustomerRow, "id" | "balance"> & { balance?: number }): Promise<CustomerRow>;
   findOrCreateCustomer(tenantId: string, name: string, phone: string): Promise<CustomerRow>;
+  deleteCustomer(tenantId: string, id: string): Promise<void>;
   addCustomerDebt(tenantId: string, customerId: string, delta: number): Promise<CustomerRow>;
   recordCustomerPayment(tenantId: string, customerId: string, amount: number, method?: string, ref?: string): Promise<{ customer: CustomerRow; payment: CustomerPaymentRow }>;
   listCustomerPayments(tenantId: string, customerId?: string): Promise<CustomerPaymentRow[]>;
@@ -267,6 +269,13 @@ export class MemoryAdapter implements DbPort {
     const e = this.employees.find((x) => x.id === id && x.tenantId === tenantId); if (!e) throw new Error("employee");
     Object.assign(e, patch); return e;
   }
+  async deleteEmployee(tenantId: string, id: string) {
+    const e = this.employees.find((x) => x.id === id && x.tenantId === tenantId); if (!e) throw new Error("employee");
+    this.employees = this.employees.filter((x) => !(x.id === id && x.tenantId === tenantId));
+    this.att = this.att.filter((a) => !(a.employeeId === id && a.tenantId === tenantId));
+    this.advances = this.advances.filter((a) => !(a.employeeId === id && a.tenantId === tenantId));
+    for (const u of this.users) if (u.tenantId === tenantId && u.employeeId === id) u.employeeId = null;
+  }
   advances: SalaryAdvanceRow[] = [];
   async listAdvances(tenantId: string, employeeId?: string) {
     return this.advances.filter((a) => a.tenantId === tenantId && (!employeeId || a.employeeId === employeeId));
@@ -356,6 +365,11 @@ export class MemoryAdapter implements DbPort {
     const cur = this.customers.find((c) => c.tenantId === tenantId && c.phone === phone);
     if (cur) return cur;
     return this.createCustomer({ tenantId, name, phone, address: null });
+  }
+  async deleteCustomer(tenantId: string, id: string) {
+    const c = this.customers.find((x) => x.id === id && x.tenantId === tenantId); if (!c) throw new Error("customer");
+    this.customers = this.customers.filter((x) => !(x.id === id && x.tenantId === tenantId));
+    this.customerPayments = this.customerPayments.filter((p) => !(p.customerId === id && p.tenantId === tenantId));
   }
   async addCustomerDebt(tenantId: string, customerId: string, delta: number) {
     const c = this.customers.find((x) => x.id === customerId && x.tenantId === tenantId);
@@ -618,6 +632,11 @@ export class PrismaAdapter implements DbPort {
     if (cur) return PrismaAdapter.row<CustomerRow>(cur);
     return this.createCustomer({ tenantId, name, phone, address: null });
   }
+  async deleteCustomer(tenantId: string, id: string) {
+    const cur = await this.m("customer").findFirst({ where: { id, tenantId } });
+    if (!cur) throw new Error("customer");
+    await this.m("customer").delete({ where: { id } });
+  }
   async addCustomerDebt(tenantId: string, customerId: string, delta: number) {
     const cur = await this.m("customer").findFirst({ where: { id: customerId, tenantId } });
     if (!cur) throw new Error("customer");
@@ -656,6 +675,13 @@ export class PrismaAdapter implements DbPort {
     const cur = await this.m("employee").findFirst({ where: { id, tenantId } });
     if (!cur) throw new Error("employee");
     return PrismaAdapter.row<EmployeeRow>(await this.m("employee").update({ where: { id }, data: { ...patch } }));
+  }
+  async deleteEmployee(tenantId: string, id: string) {
+    const cur = await this.m("employee").findFirst({ where: { id, tenantId } });
+    if (!cur) throw new Error("employee");
+    const linked = await this.m("user").findMany({ where: { tenantId, employeeId: id } }) as { id: string }[];
+    for (const u of linked) await this.m("user").update({ where: { id: u.id }, data: { employeeId: null } });
+    await this.m("employee").delete({ where: { id } });
   }
   async listAdvances(tenantId: string, employeeId?: string) {
     return PrismaAdapter.row<SalaryAdvanceRow[]>(await this.m("salaryAdvance").findMany({

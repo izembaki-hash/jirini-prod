@@ -53,6 +53,26 @@
         reverse_proxy api:4000
     }
 
+    handle /salary-advances* {
+        reverse_proxy api:4000
+    }
+
+    handle /salaries* {
+        reverse_proxy api:4000
+    }
+
+    handle /recipes* {
+        reverse_proxy api:4000
+    }
+
+    handle /moves* {
+        reverse_proxy api:4000
+    }
+
+    handle /reports* {
+        reverse_proxy api:4000
+    }
+
     handle /branches* {
         reverse_proxy api:4000
     }

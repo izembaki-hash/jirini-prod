@@ -169,6 +169,7 @@ export const api = {
     req<{ id: string; employeeId: string }>("/auth/users", { method: "POST", body: JSON.stringify(e) }),
   updateEmployee: (id: string, patch: { name?: string; title?: string | null; halfWage?: number }) =>
     req<ApiEmployee>(`/employees/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  employeeDelete: (id: string) => req<{ ok: boolean }>(`/employees/${id}`, { method: "DELETE" }),
   advancesList: () => req<ApiAdvance[]>("/salary-advances"),
   advanceCreate: (a: { employeeId: string; amount: number; note?: string }) =>
     req<ApiAdvance>("/salary-advances", { method: "POST", body: JSON.stringify(a) }),
@@ -202,6 +203,7 @@ export const api = {
   customersPay: (id: string, p: { amount: number; method?: string; ref?: string }) =>
     req<{ customer: ApiCustomer; payment: ApiCustomerPayment }>(`/customers/${id}/pay`, { method: "POST", body: JSON.stringify(p) }),
   customerPayments: (id: string) => req<ApiCustomerPayment[]>(`/customers/${id}/payments`),
+  customersDelete: (id: string) => req<{ ok: boolean }>(`/customers/${id}`, { method: "DELETE" }),
   goalsList: () => req<ApiGoal[]>("/goals"),
   goalsCreate: (g: { title: string; target: number; monthly: number }) =>
     req<ApiGoal>("/goals", { method: "POST", body: JSON.stringify(g) }),

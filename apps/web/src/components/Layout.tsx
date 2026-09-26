@@ -7,7 +7,7 @@ import {
 import { toast } from "sonner";
 import { useStore, type PlanId } from "../store";
 import { useAuth, connected, canSee } from "../auth";
-import { api, setBranch, ApiError, supportSubmit } from "../api";
+import { api, setBranch, ApiError, supportSubmit, uploadUrl } from "../api";
 import { t, type Lang } from "../i18n";
 import { Button, cn } from "../ui";
 
@@ -140,7 +140,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
       {/* الشريط الجانبي — سطح المكتب */}
       <aside className="sticky top-0 hidden h-[100dvh] w-60 shrink-0 flex-col gap-0.5 overflow-y-auto border-e border-line bg-surface p-4 print:hidden md:flex" aria-label={L === "ar" ? "التنقل" : "Navigation"}>
         <button onClick={() => nav("/app")} className="mb-3 flex items-center gap-2.5 rounded-[10px] px-2 py-1.5 text-start hover:bg-canvas">
-          <span aria-hidden className="grid size-10 shrink-0 place-items-center rounded-xl bg-growth text-lg font-bold text-white">د</span>
+          {uploadUrl(s.shopLogo)
+            ? <img src={uploadUrl(s.shopLogo) ?? undefined} alt="" className="size-10 shrink-0 rounded-xl object-cover" />
+            : <span aria-hidden className="grid size-10 shrink-0 place-items-center rounded-xl bg-growth text-lg font-bold text-white">د</span>}
           <span className="min-w-0">
             <span className="block truncate text-sm font-bold leading-tight">{s.businessName}</span>
             <span className="block truncate text-[11px] text-muted">{t(L, "tagline")}</span>
@@ -177,7 +179,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <header style={{ paddingTop: "env(safe-area-inset-top)" }} className="sticky top-0 z-30 flex min-h-16 items-center gap-2 border-b border-line bg-canvas/90 px-4 backdrop-blur print:hidden">
           <button onClick={() => nav("/app")} className="flex items-center gap-2 md:hidden" aria-label={s.businessName}>
-            <span aria-hidden className="grid size-9 place-items-center rounded-[10px] bg-growth font-bold text-white">د</span>
+            {uploadUrl(s.shopLogo)
+              ? <img src={uploadUrl(s.shopLogo) ?? undefined} alt="" className="size-9 shrink-0 rounded-[10px] object-cover" />
+              : <span aria-hidden className="grid size-9 place-items-center rounded-[10px] bg-growth font-bold text-white">د</span>}
             <span className="max-w-[40vw] truncate text-sm font-bold">{s.businessName}</span>
           </button>
           <div className="ms-auto flex items-center gap-2">

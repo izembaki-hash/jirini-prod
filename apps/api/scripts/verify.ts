@@ -545,6 +545,39 @@ async function main() {
   r = await call("DELETE", `/salary-advances/${advId}`, undefined, ownerTok2);
   ok("advance delete", r.status === 200);
 
+  // حذف عامل: يسقط الحضور والسلف ويفكّ ربط حساب الدخول
+  r = await call("POST", "/auth/users", { name: "Temp Emp", phone: "0550666666", password: "secret12", role: "cashier" }, ownerTok2);
+  ok("temp emp created", r.status === 201);
+  const tmpEmpId = (r.json as { employeeId: string }).employeeId;
+  await db.markAttendance({ tenantId: tenant.id, employeeId: tmpEmpId, date: "2026-01-05", status: "full" });
+  r = await call("POST", "/salary-advances", { employeeId: tmpEmpId, amount: 300 }, ownerTok2);
+  ok("temp advance created", r.status === 201);
+  r = await call("DELETE", `/employees/${tmpEmpId}`, undefined, cashTok);
+  ok("cashier delete emp → 403", r.status === 403);
+  r = await call("DELETE", `/employees/${tmpEmpId}`, undefined, ownerTok2);
+  ok("employee delete", r.status === 200);
+  ok("emp att cascade", (await db.listAttendance(tenant.id)).every((a) => a.employeeId !== tmpEmpId));
+  ok("emp advance cascade", (await db.listAdvances(tenant.id)).every((a) => a.employeeId !== tmpEmpId));
+  ok("emp user unlinked", (await db.listUsers(tenant.id)).every((u) => u.employeeId !== tmpEmpId));
+  r = await call("DELETE", `/employees/${tmpEmpId}`, undefined, ownerTok2);
+  ok("employee delete 404", r.status === 404);
+
+  // حذف عميل: يسقط سجل الدفعات — مالك/مدير فقط
+  r = await call("PATCH", "/tenant", { crmEnabled: true }, ownerTok2);
+  ok("re-enable crm", r.status === 200);
+  r = await call("POST", "/customers", { name: "Temp Cust", phone: "0550777777" }, cashTok);
+  ok("temp customer created", r.status === 201);
+  const tmpCustId = (r.json as { id: string }).id;
+  await db.addCustomerDebt(tenant.id, tmpCustId, 500);
+  await db.recordCustomerPayment(tenant.id, tmpCustId, 200, "cash");
+  r = await call("DELETE", `/customers/${tmpCustId}`, undefined, cashTok);
+  ok("cashier delete customer → 403", r.status === 403);
+  r = await call("DELETE", `/customers/${tmpCustId}`, undefined, ownerTok2);
+  ok("customer delete", r.status === 200);
+  ok("customer payments cascade", (await db.listCustomerPayments(tenant.id, tmpCustId)).length === 0);
+  r = await call("DELETE", `/customers/${tmpCustId}`, undefined, ownerTok2);
+  ok("customer delete 404", r.status === 404);
+
   // تذاكر الدعم: مستخدم يرسل → المشغّل يرى ويغلق
   r = await call("POST", "/support/tickets", { message: "لا تظهر فاتورة الطاولة 3" }, ownerTok2);
   ok("support ticket created", r.status === 201 && typeof (r.json as { id: string }).id === "string");

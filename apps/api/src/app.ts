@@ -311,6 +311,12 @@ export async function buildApp(db?: DbPort) {
     } catch (e) { next(e); }
   });
 
+  // حذف موظف (يُسقط الحضور والسلف تلقائياً — cascade) ويفكّ ربط حساباته
+  app.delete("/employees/:id", requireAuth, requireRole("owner", "manager"), requirePage("staff"), async (req, res, next) => {
+    try { await dbx.deleteEmployee(req.auth!.tenant_id, req.params.id); res.json({ ok: true }); }
+    catch (e) { next(e); }
+  });
+
   // سلف/خصومات الموظفين (تُطرح من إجمالي الأجر = الصافي)
   app.get("/salary-advances", requireAuth, requireRole("owner", "manager"), requirePage("staff"), async (req, res, next) => {
     try { res.json(await dbx.listAdvances(req.auth!.tenant_id, (req.query.employee as string) || undefined)); }
@@ -732,6 +738,14 @@ export async function buildApp(db?: DbPort) {
     try {
       if (!await needCrm(req, res)) return;
       res.json(await dbx.listCustomerPayments(req.auth!.tenant_id, req.params.id));
+    } catch (e) { next(e); }
+  });
+  // حذف عميل (يُسقط سجل الدفعات — cascade) — مالك/مدير فقط
+  app.delete("/customers/:id", requireAuth, requireRole("owner", "manager"), requirePage("customers"), async (req, res, next) => {
+    try {
+      if (!await needCrm(req, res)) return;
+      await dbx.deleteCustomer(req.auth!.tenant_id, req.params.id);
+      res.json({ ok: true });
     } catch (e) { next(e); }
   });
 
@@ -1540,7 +1554,7 @@ export async function buildApp(db?: DbPort) {
     if (e.status) { res.status(e.status).json({ error: e.message }); return; }
     // سجل Prisma غير موجود (تحديث/حذف لمعرّف زائف) → 404 لا 500
     if (e.code === "P2025") { res.status(404).json({ error: "not_found" }); return; }
-    if ((e.message === "product" || e.message === "order" || e.message === "shift" || e.message === "goal" || e.message === "recipe" || e.message === "supplier" || e.message === "purchase" || e.message === "driver" || e.message === "tenant" || e.message === "payment" || e.message === "overhead" || e.message === "customer") ) {
+    if ((e.message === "product" || e.message === "order" || e.message === "shift" || e.message === "goal" || e.message === "recipe" || e.message === "supplier" || e.message === "purchase" || e.message === "driver" || e.message === "tenant" || e.message === "payment" || e.message === "overhead" || e.message === "customer" || e.message === "employee") ) {
       res.status(404).json({ error: "not_found" }); return;
     }
     console.error("[api]", err);

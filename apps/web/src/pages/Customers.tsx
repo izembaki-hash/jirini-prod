@@ -1,6 +1,7 @@
 ﻿import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
+import { Trash } from "@phosphor-icons/react";
 import { fmtDzd, useStore } from "../store";
 import { api } from "../api";
 import { connected } from "../auth";
@@ -44,6 +45,16 @@ export default function Customers() {
       setPayHist(await api.customerPayments(id));
       setHistId(id);
     } catch { toast.error(t(L, "errSaving")); }
+  };
+
+  const delCust = async (id: string) => {
+    if (!window.confirm(t(L, "custDelConfirm"))) return;
+    if (connected()) {
+      try { await api.customersDelete(id); } catch { toast.error(t(L, "errSaving")); return; }
+    }
+    update((p) => ({ ...p, customers: p.customers.filter((c) => c.id !== id) }));
+    if (ledgerId === id) setHistId(null);
+    if (payingId === id) setPayingId(null);
   };
 
   const add = async (e: React.FormEvent) => {
@@ -98,6 +109,10 @@ export default function Customers() {
                     {connected() && (
                       <Button size="sm" variant="ghost" onClick={() => showHist(c.id)}>{t(L, "payHistory")}</Button>
                     )}
+                    <button onClick={() => delCust(c.id)} aria-label={`${t(L, "del")} ${c.name}`}
+                      className="btn-press grid size-9 shrink-0 place-items-center rounded-lg border border-line text-ember">
+                      <Trash size={16} aria-hidden />
+                    </button>
                   </div>
                   {payingId === c.id && (
                     <form className="flex items-end gap-2 ps-13" onSubmit={(e) => { e.preventDefault(); pay(c.id); }}>
