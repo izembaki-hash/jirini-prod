@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { fmtDzd, useStore } from "../store";
-import { API_BASE, ApiError, getOperatorKey, setOperatorKey, ops, type OpsOverview, type OpsTenant, type OpsSupportTicket } from "../api";
+import { API_BASE, ApiError, getOperatorKey, setOperatorKey, ops, type OpsOverview, type OpsTenant, type OpsSupportTicket, type LegalKey, type LegalLang } from "../api";
 import { t, type Lang } from "../i18n";
 import { errMsg } from "../lib/err";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Empty, Field, Input, Segmented, Stat } from "../ui";
@@ -12,7 +12,7 @@ function opsErr(L: Lang, e: unknown) {
 
 // لوحة مشغّل المنصة: كل المستأجرين والمستخدمين والمدفوعات + إجراءات.
 // مستقلة عن Shell (مستوى المنصة لا المستأجر). تتطلب API + مفتاح المشغّل.
-type Tab = "overview" | "tenants" | "payments" | "support" | "system";
+type Tab = "overview" | "tenants" | "payments" | "support" | "legal" | "system";
 
 export default function Ops() {
   const { s } = useStore();
@@ -75,6 +75,7 @@ export default function Ops() {
             { value: "tenants", label: t(L, "tabTenants") },
             { value: "payments", label: t(L, "tabPayments") },
             { value: "support", label: t(L, "tabSupport") },
+            { value: "legal", label: t(L, "tabLegal") },
             { value: "system", label: t(L, "tabSystem") },
           ]}
           onChange={setTab} />
@@ -83,6 +84,7 @@ export default function Ops() {
       {tab === "tenants" && <TenantsTab />}
       {tab === "payments" && <PaymentsTab />}
       {tab === "support" && <SupportTab />}
+      {tab === "legal" && <LegalTab />}
       {tab === "system" && <SystemTab />}
     </div>
   );
@@ -383,5 +385,72 @@ function Stat2({ label, value }: { label: string; value: string }) {
       <span className="text-xs text-muted">{label}</span>
       <b className="tnum text-lg">{value}</b>
     </div></Card>
+  );
+}
+
+// محرّر الصفحات القانونية (خصوصية/شروط) — عربي/فرنسي، حفظ فوري يظهر للجميع.
+function LegalTab() {
+  const { s } = useStore();
+  const L = s.lang;
+  const [key, setKey] = useState<LegalKey>("privacy");
+  const [lang, setLang] = useState<LegalLang>("ar");
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true); setTitle(""); setBody("");
+    ops.legalGet(key).then((p) => {
+      if (!alive) return;
+      setTitle(p[lang].title); setBody(p[lang].body); setLoading(false);
+    }).catch((e) => { if (alive) { setLoading(false); opsErr(L, e); } });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, lang]);
+
+  const save = async () => {
+    if (!title.trim() || !body.trim()) return;
+    setSaving(true);
+    try {
+      await ops.legalSave(key, lang, title, body);
+      toast.success(t(L, "legalSaved"));
+    } catch (e) { opsErr(L, e); } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-sm text-muted">{t(L, "legalHint")} — {t(L, "legalKeyPublic")}</p>
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="w-full sm:w-72">
+          <Segmented label="page" value={key}
+            options={[{ value: "privacy", label: t(L, "privacyT") }, { value: "terms", label: t(L, "termsT") }]}
+            onChange={(v) => setKey(v as LegalKey)} />
+        </div>
+        <div className="w-44">
+          <Segmented label="lang" value={lang}
+            options={[{ value: "ar", label: "عربي" }, { value: "fr", label: "Français" }]}
+            onChange={(v) => setLang(v as LegalLang)} />
+        </div>
+      </div>
+      {loading ? <p className="text-sm text-muted">…</p> : (
+        <Card>
+          <CardContent className="flex flex-col gap-3 p-4">
+            <Field label={t(L, "legalTitleL")} id="lg-title">
+              <Input id="lg-title" value={title} onChange={(e) => setTitle(e.target.value)} dir={lang === "ar" ? "rtl" : "ltr"} maxLength={200} />
+            </Field>
+            <label className="flex flex-col gap-1.5 text-sm font-bold" htmlFor="lg-body">
+              <span>{t(L, "legalBodyL")}</span>
+              <textarea id="lg-body" value={body} onChange={(e) => setBody(e.target.value)} dir={lang === "ar" ? "rtl" : "ltr"}
+                className="min-h-[340px] w-full rounded-[10px] border border-line bg-canvas p-3 text-sm font-normal leading-7" maxLength={30000} />
+            </label>
+            <div className="flex justify-end">
+              <Button onClick={save} loading={saving} disabled={!title.trim() || !body.trim()}>{t(L, "saveB")}</Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
   );
 }

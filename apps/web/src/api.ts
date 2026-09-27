@@ -231,7 +231,14 @@ export const api = {
     req<ApiBranch>("/branches", { method: "POST", body: JSON.stringify(b) }),
   branchesTransfer: (t: { productId: string; fromBranchId: string; toBranchId: string; qty: number }) =>
     req<{ from: ApiProduct; to: ApiProduct }>("/branches/transfer", { method: "POST", body: JSON.stringify(t) }),
+  legalGet: (key: LegalKey) => req<LegalPageResp>(`/public/legal/${key}`, {}, false),
 };
+
+// ─── الصفحات القانونية (خصوصية/شروط) — قراءة عامة + حفظ من لوحة المشغّل ───
+export type LegalKey = "privacy" | "terms";
+export type LegalLang = "ar" | "fr";
+export interface LegalContent { title: string; body: string }
+export interface LegalPageResp { key: LegalKey; ar: LegalContent; fr: LegalContent }
 
 // ─── لوحة المشغّل: مفتاح OPERATOR_KEY في الترويسة (لا JWT) ───
 export function getOperatorKey(): string | null {
@@ -285,6 +292,9 @@ export const ops = {
   health: () => opsReq<{ ok: boolean; db: string; uptimeSec: number; time: string; env: Record<string, unknown> }>("/ops/health"),
   tickets: (status?: string) => opsReq<OpsSupportTicket[]>(`/ops/support${status ? `?status=${status}` : ""}`),
   resolveTicket: (id: string) => opsReq<{ ok: boolean }>(`/ops/support/${id}/resolve`, { method: "POST" }),
+  legalGet: (key: LegalKey) => opsReq<LegalPageResp>(`/public/legal/${key}`),
+  legalSave: (key: LegalKey, lang: LegalLang, title: string, body: string) =>
+    opsReq<{ id: string }>(`/ops/legal/${key}`, { method: "PUT", body: JSON.stringify({ lang, title, body }) }),
 };
 
 export const supportSubmit = (message: string, contact?: string) =>

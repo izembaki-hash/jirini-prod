@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useStore } from "../store";
 import { api } from "../api";
 import { t } from "../i18n";
@@ -91,6 +91,10 @@ export default function Signup() {
             <div className="sticky bottom-0 -mx-1 flex gap-2 bg-surface/95 py-2 backdrop-blur sm:static sm:bg-transparent sm:p-0 sm:backdrop-none">
               <Button type="submit" size="lg" loading={busy} className="flex-1">{t(L, "toPay")}</Button>
               <Button type="button" size="lg" variant="outline" onClick={() => nav("/")}>{t(L, "back")}</Button>
+            </div>
+            <div className="flex items-center justify-center gap-5 text-xs font-bold text-muted">
+              <Link to="/privacy" className="underline underline-offset-4">{t(L, "privacyT")}</Link>
+              <Link to="/terms" className="underline underline-offset-4">{t(L, "termsT")}</Link>
             </div>
           </form>
         </CardContent>

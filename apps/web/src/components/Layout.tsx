@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   SquaresFour, CashRegister, Timer, Package, CookingPot, Receipt, Users,
-  CalendarCheck, ChartBar, GitBranch, TrendUp, Gear, Question,
+  CalendarCheck, ChartBar, GitBranch, TrendUp, Gear, Question, SignOut,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { useStore, type PlanId } from "../store";
@@ -214,14 +214,15 @@ export function Shell({ children }: { children: React.ReactNode }) {
             {uploadUrl(s.shopLogo)
               ? <img src={uploadUrl(s.shopLogo) ?? undefined} alt="" className="size-9 shrink-0 rounded-[10px] object-cover" />
               : <span aria-hidden className="grid size-9 place-items-center rounded-[10px] bg-growth font-bold text-white">د</span>}
-            <span className="max-w-[40vw] truncate text-sm font-bold">{s.businessName}</span>
+            {/* الاسم يظهر من sm فما فوق — على الهاتف الشعيرات الثمينة (320-390) للأزرار */}
+            <span className="hidden max-w-[40vw] truncate text-sm font-bold sm:inline">{s.businessName}</span>
           </button>
           <div className="ms-auto flex items-center gap-2">
             {s.branches.length > 1 && (
               <>
                 <label className="sr-only" htmlFor="branch-switch-h">{t(L, "brSwitch")}</label>
                 <select id="branch-switch-h" value={activeBranchId} onChange={(e) => switchBranch(e.target.value)}
-                  className="h-11 max-w-[36vw] rounded-[10px] border border-line bg-surface px-2 text-sm font-bold text-growth-deep sm:max-w-[180px]">
+                  className="h-11 max-w-[26vw] rounded-[10px] border border-line bg-surface px-2 text-sm font-bold text-growth-deep sm:max-w-[180px]">
                   {s.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
               </>
@@ -234,8 +235,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
                 <button onClick={() => setHelpOpen(true)} className="h-11 min-w-11 rounded-[10px] border border-line px-3 text-sm font-bold" aria-label={t(L, "helpBtn")} title={t(L, "helpBtn")}>
                   <Question size={18} weight="bold" aria-hidden />
                 </button>
-                <button onClick={() => { logout(); nav("/login"); }} className="h-11 rounded-[10px] border border-line px-3 text-sm font-bold" aria-label={L === "ar" ? "خروج" : "Déconnexion"}>
-                  {L === "ar" ? "خروج" : "Sortie"}
+                <button onClick={() => { logout(); nav("/login"); }} className="h-11 min-w-11 rounded-[10px] border border-line px-3 text-sm font-bold" aria-label={L === "ar" ? "خروج" : "Déconnexion"} title={L === "ar" ? "خروج" : "Déconnexion"}>
+                  <SignOut size={18} weight="bold" className="sm:hidden" aria-hidden />
+                  <span className="hidden sm:inline">{L === "ar" ? "خروج" : "Sortie"}</span>
                 </button>
               </>
             )}

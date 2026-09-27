@@ -85,6 +85,10 @@ export default function Login() {
               )}
               {err && <p role="alert" className="pop-in rounded-[10px] bg-ember/10 px-3 py-2.5 text-sm font-bold text-ember">{err}</p>}
               <Button type="submit" size="lg" loading={busy}>{t(L, "lGo")}</Button>
+              <div className="flex items-center justify-center gap-5 text-xs font-bold text-muted">
+                <Link to="/privacy" className="underline underline-offset-4">{t(L, "privacyT")}</Link>
+                <Link to="/terms" className="underline underline-offset-4">{t(L, "termsT")}</Link>
+              </div>
               <Link to="/" className="mx-auto w-fit rounded-lg px-2 py-2 text-xs font-bold text-muted underline underline-offset-4">{t(L, "back")}</Link>
             </form>
           </CardContent>
