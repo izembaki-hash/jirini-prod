@@ -7,12 +7,17 @@ import {
 import { toast } from "sonner";
 import { useStore, type PlanId } from "../store";
 import { useAuth, connected, canSee } from "../auth";
-import { api, setBranch, ApiError, supportSubmit, uploadUrl } from "../api";
+import { api, setBranch, currentBranch, toOrder, toProduct, ApiError, supportSubmit, uploadUrl } from "../api";
 import { t, type Lang } from "../i18n";
 import { Button, cn } from "../ui";
 import { errMsg } from "../lib/err";
 
 const PRICE_OF: Record<PlanId, number> = { starter: 2500, pro: 3000, mega: 4500 };
+// الفرع المختار مسبقاً من جلسة سابقة — يبقى محفوظاً بين عمليات الدخول.
+const persistedBranch = (branches: { id: string }[]) => {
+  const cur = currentBranch();
+  return cur && branches.some((b) => b.id === cur) ? cur : null;
+};
 const roleLabel = (role: string, L: Lang) =>
   role === "owner" ? t(L, "roleOwner") : role === "manager" ? t(L, "roleManager") : role === "cashier" ? t(L, "roleCashier") : role === "cook" ? t(L, "roleCook") : role;
 
@@ -84,6 +89,25 @@ export function Shell({ children }: { children: React.ReactNode }) {
     document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
   };
 
+  const activeBranchId =
+    s.branches.find((b) => b.name === s.branch)?.id ?? currentBranch() ?? s.branches[0]?.id ?? "";
+
+  // مبدّل الفروع: يغيّر الفرع النشط (POS/المخزون/الورديات تستخدمه في الإنشاء)
+  // ويعيد جلب الكتالوج والطلبات المخصّصة لهذا الفرع.
+  const switchBranch = (id: string) => {
+    const b = s.branches.find((x) => x.id === id);
+    if (!b || id === activeBranchId) return;
+    setBranch(id);
+    update((p) => ({ ...p, branch: b.name }));
+    if (!connected()) return;
+    api.listProducts(id)
+      .then((products) => update((p) => ({ ...p, products: products.map(toProduct) })))
+      .catch(() => null);
+    api.listOrders(undefined, { branch: id })
+      .then((list) => update((p) => ({ ...p, orders: list.map(toOrder) })))
+      .catch(() => null);
+  };
+
   // روابط مرشحة حسب صلاحيات الجلسة (الجلسة إلزامية في `/app`).
   const gate = (page: string) => canSee(session, page);
   const deskLinks = LINKS.filter((l) => (s.businessType === "restaurant" || l.to !== "/app/kitchen") && gate(l.key));
@@ -97,9 +121,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
     syncedFor.current = sessionKey;
     (async () => {
       try {
-        const [{ tenant, branches }, products] = await Promise.all([api.tenantInfo(), api.listProducts()]);
+        const { tenant, branches } = await api.tenantInfo();
         if (!tenant) { logout(); nav("/login"); return; }
-        setBranch(branches[0]?.id ?? null);
+        const keep = persistedBranch(branches);
+        setBranch(keep ?? branches[0]?.id ?? null);
+        const products = await api.listProducts(keep ?? undefined);
         update((p) => ({
           ...p,
           businessName: tenant.name || p.businessName,
@@ -108,17 +134,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
           shopLogo: (tenant.logoUrl as string) || "",
           businessType: tenant.type === "shop" ? "shop" : "restaurant",
           plan: (["starter", "pro", "mega"] as PlanId[]).includes(tenant.plan as PlanId) ? (tenant.plan as PlanId) : p.plan,
-          branches: branches.map((b) => b.name),
-          branch: branches[0]?.name ?? p.branch,
+          branches,
+          branch: branches.find((b) => b.id === (keep ?? branches[0]?.id))?.name ?? p.branch,
           tables: typeof (tenant as { tablesCount?: unknown }).tablesCount === "number"
             ? Math.min(60, Math.max(1, (tenant as { tablesCount: number }).tablesCount))
             : p.tables,
-          products: products.map((sp) => ({
-            id: sp.id, name: sp.name, nameFr: sp.nameFr ?? sp.name,
-            buy: sp.buyPrice, sell: sp.sellPrice, qty: sp.qty, min: sp.minQty,
-            barcode: sp.barcode ?? undefined, cat: sp.category ?? "عام", active: sp.active,
-            saleable: sp.saleable ?? true, img: sp.imageUrl ?? undefined,
-          })),
+          products: products.map(toProduct),
         }));
         // المصاريف الثابتة: فشلها لا يكسر المزامنة (الكاشير مثلاً بلا صلاحية)
         api.listOverheads().then((list) => update((p) => ({
@@ -164,6 +185,16 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </NavLink>
         ))}
         <div className="mt-auto flex flex-col gap-2 border-t border-line pt-3">
+          {s.branches.length > 1 && (
+            <div className="flex items-center gap-2">
+              <GitBranch size={16} weight="bold" aria-hidden className="shrink-0 text-muted" />
+              <label className="sr-only" htmlFor="branch-switch-d">{t(L, "brSwitch")}</label>
+              <select id="branch-switch-d" value={activeBranchId} onChange={(e) => switchBranch(e.target.value)}
+                className="h-9 w-full min-w-0 rounded-[10px] border border-line bg-surface px-2 text-sm font-bold text-growth-deep">
+                {s.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            </div>
+          )}
           <div className="flex gap-2" role="group" aria-label="Language / اللغة">
             {(["ar", "fr"] as const).map((lg) => (
               <button key={lg} onClick={() => setLang(lg)} aria-pressed={L === lg}
@@ -186,6 +217,15 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <span className="max-w-[40vw] truncate text-sm font-bold">{s.businessName}</span>
           </button>
           <div className="ms-auto flex items-center gap-2">
+            {s.branches.length > 1 && (
+              <>
+                <label className="sr-only" htmlFor="branch-switch-h">{t(L, "brSwitch")}</label>
+                <select id="branch-switch-h" value={activeBranchId} onChange={(e) => switchBranch(e.target.value)}
+                  className="h-11 max-w-[36vw] rounded-[10px] border border-line bg-surface px-2 text-sm font-bold text-growth-deep sm:max-w-[180px]">
+                  {s.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
+              </>
+            )}
             {session && (
               <>
                 <span className="hidden rounded-full border border-line px-2.5 py-1 text-xs text-muted sm:inline">

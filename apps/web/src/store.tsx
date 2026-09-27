@@ -17,6 +17,7 @@ export interface Order {
   id: string; kind: string; table?: string; status: OrderStatus; lines: OrderLine[];
   discount: number; pay: "cash" | "card" | "credit"; customer?: string; phone?: string; address?: string;
   at: string; total: number; num: number; driverId?: string | null; driverName?: string;
+  branchId?: string | null;
 }
 export interface Shift { id: string; by: string; openedAt: string; closedAt: string | null; opening: number; closing: number | null; note: string }
 export interface Employee { id: string; name: string; role: Role; hired: string; half: number; title?: string }
@@ -84,7 +85,7 @@ interface State {
   role: Role;
   crmOn: boolean;
   branch: string;
-  branches: string[];
+  branches: { id: string; name: string; address: string }[];
   tables: number;
   products: Product[];
   orders: Order[];

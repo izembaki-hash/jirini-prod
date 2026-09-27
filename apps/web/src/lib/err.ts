@@ -44,6 +44,7 @@ const CODE_KEY: Record<string, TKey> = {
   no_file: "erNoFile",
   bad_json: "erBadJson",
   payload_too_large: "erTooLarge",
+  same_branch: "erSameBranch",
 };
 
 // كيانات رسائل 404 (تُرسل مع حقل entity من الـAPI)
@@ -51,7 +52,7 @@ const ENTITY_KEY: Record<string, TKey> = {
   product: "entProduct", order: "entOrder", shift: "entShift", goal: "entGoal",
   recipe: "entRecipe", supplier: "entSupplier", purchase: "entPurchase", driver: "entDriver",
   tenant: "entTenant", payment: "entPayment", overhead: "entOverhead", customer: "entCustomer",
-  employee: "entEmployee", user: "entUser",
+  employee: "entEmployee", user: "entUser", branch: "entBranch",
 };
 
 function fill(s: string, vars: Record<string, string | number>): string {

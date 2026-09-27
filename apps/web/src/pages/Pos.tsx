@@ -211,6 +211,7 @@ export default function Pos() {
             status: "preparing",
             lines: created.lines.map((l) => ({ productId: l.productId, name: l.name, qty: l.qty, price: l.price })),
             discount: created.discount, pay, at: created.createdAt, total: created.total,
+            branchId: created.branchId ?? currentBranch(),
             customer: pay === "credit" && creditMatch ? creditMatch.name : undefined,
           }, ...p.orders],
         }));

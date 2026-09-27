@@ -432,6 +432,32 @@ async function main() {
     ok("order with other-branch product â†’ 409", r.status === 409);
     r = await call("POST", "/products", { name: "ÙƒØ§Ø´ÙŠØ±-ÙØ±Ø¹", branchId: branch.id, buyPrice: 1, sellPrice: 2, qty: 1 }, cashTok);
     ok("cashier create product â†’ 403 (role)", r.status === 403);
+    // real cross-branch stock transfer (branches page)
+    r = await call("POST", "/branches/transfer", { productId: p1.id, fromBranchId: branch.id, toBranchId: branch.id, qty: 1 }, ownerTok2);
+    ok("transfer same branch -> 400", r.status === 400 && (r.json as { error: string }).error === "same_branch");
+    r = await call("POST", "/branches/transfer", { productId: p1.id, fromBranchId: branch.id, toBranchId: "no-such-branch", qty: 1 }, ownerTok2);
+    ok("transfer unknown branch -> 404", r.status === 404 && (r.json as { error: string }).error === "not_found");
+    r = await call("POST", "/branches/transfer", { productId: p1.id, fromBranchId: branch.id, toBranchId: branch2, qty: 99999 }, ownerTok2);
+    ok("transfer over stock -> 409 insufficient", r.status === 409 && String((r.json as { error: string }).error).startsWith("insufficient_stock:"));
+    const srcBefore = (await db.listProducts(tenant.id, branch.id)).find((x) => x.id === p1.id)?.qty ?? -1;
+    r = await call("POST", "/branches/transfer", { productId: p1.id, fromBranchId: branch.id, toBranchId: branch2, qty: 3 }, ownerTok2);
+    const tr1 = r.json as { from: { qty: number }; to: { qty: number; branchId: string } };
+    ok("transfer moves stock", r.status === 200 && tr1.from.qty === srcBefore - 3 && tr1.to.qty === 3 && tr1.to.branchId === branch2);
+    ok("transfer recorded as stock move", (await db.listMoves(tenant.id, p1.id)).some((m) => m.delta === -3));
+    r = await call("POST", "/branches/transfer", { productId: p1.id, fromBranchId: branch.id, toBranchId: branch2, qty: 2 }, ownerTok2);
+    const tr2 = r.json as { from: { qty: number }; to: { id: string; qty: number } };
+    ok("2nd transfer merges by name", r.status === 200 && tr2.from.qty === tr1.from.qty - 2 && tr2.to.qty === 5);
+    r = await call("POST", "/branches/transfer", { productId: p1.id, fromBranchId: branch.id, toBranchId: branch2, qty: 1 }, cashTok);
+    ok("cashier transfer -> 403", r.status === 403);
+    r = await call("POST", "/branches/transfer", { productId: p1.id, fromBranchId: branch.id, toBranchId: branch2, qty: 1 }, owner2);
+    ok("cross-tenant transfer -> 404", r.status === 404);
+    // branch switcher: real per-branch scoping
+    r = await call("GET", `/products?branch=${branch2}`, undefined, ownerTok2);
+    ok("products scoped by ?branch", r.status === 200 && Array.isArray(r.json) && (r.json as { branchId: string }[]).every((p) => p.branchId === branch2) && (r.json as unknown[]).length >= 2);
+    r = await call("GET", `/orders?branch=${branch2}`, undefined, ownerTok2);
+    ok("orders scoped by ?branch", r.status === 200 && Array.isArray(r.json) && (r.json as unknown[]).length === 0);
+    r = await call("GET", `/orders?branch=${branch.id}`, undefined, ownerTok2);
+    ok("orders carry branchId", r.status === 200 && Array.isArray(r.json) && (r.json as { branchId?: string | null }[]).some((o) => o.branchId === branch.id));
   } else ok("2nd branch for isolation test", false);
 
   // â”€â”€â”€ Ù„ÙˆØ­Ø© Ø§Ù„Ù…Ø´ØºÙ‘Ù„ â”€â”€â”€

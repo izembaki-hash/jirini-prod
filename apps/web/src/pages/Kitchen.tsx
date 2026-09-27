@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useStore, displayName, type Order, type OrderStatus } from "../store";
-import { api, kitchenStream, type ApiOrder } from "../api";
+import { api, kitchenStream, currentBranch, type ApiOrder } from "../api";
 import { connected } from "../auth";
 import { t } from "../i18n";
 import { Badge, Button, Card, Empty } from "../ui";
@@ -17,6 +17,8 @@ export default function Kitchen() {
     { id: "onway", label: t(L, "colOnway") },
   ];
   const [, setTick] = useState(0);
+  // مفتاح الفرع النشط — تغييره يعيد جلب طلبات الفرع في شاشة المطبخ.
+  const branchKey = s.branches.find((b) => b.name === s.branch)?.id ?? currentBranch() ?? "";
   useEffect(() => {
     // متصل: SSE حقيقي من الخادم. تجريبي: تحديث محلي دوري.
     if (connected()) {
@@ -28,17 +30,19 @@ export default function Kitchen() {
           return { productId: l.productId, name: displayName(p, L), qty: l.qty, price: l.price };
         }),
         discount: o.discount, pay: o.payMethod as Order["pay"], at: o.createdAt, total: o.total,
-        driverId: o.driverId ?? null, driverName: o.driver?.name,
+        driverId: o.driverId ?? null, driverName: o.driver?.name, branchId: o.branchId ?? null,
       });
       const merge = (m: Order) =>
         update((p) => (p.orders.some((x) => x.id === m.id) ? p : { ...p, orders: [m, ...p.orders] }));
+      // طلبات الفرع المختار فقط (البث الحي قد يرسل طلبات كل الفروع)
+      const own = (o: ApiOrder) => !o.branchId || !currentBranch() || o.branchId === currentBranch();
       // جلب النشطة أولاً (طلبات وردت والمطبخ مغلق/تحدّث)، ثم البث الحي.
-      api.listOrders().then((list) => {
+      api.listOrders(undefined, { branch: currentBranch() ?? undefined }).then((list) => {
         list.filter((o) => ["pending", "preparing", "ready", "onway"].includes(o.status))
           .forEach((o) => merge(map(o)));
       }).catch(() => null);
       return kitchenStream((e) => {
-        if (e.type === "order.created" && e.order) {
+        if (e.type === "order.created" && e.order && own(e.order)) {
           merge(map(e.order));
         } else if (e.type === "order.status" && e.order) {
           const { id, status } = e.order;
@@ -53,7 +57,7 @@ export default function Kitchen() {
     }
     const id = setInterval(() => setTick((x) => x + 1), 2000); // محاكاة Realtime — في الإنتاج: onSnapshot / SSE
     return () => clearInterval(id);
-  }, [update, L]);
+  }, [update, L, branchKey]);
   const live = s.orders.filter((o) => ["pending", "preparing", "ready", "onway"].includes(o.status));
   const inCol = (o: (typeof live)[number], c: OrderStatus) =>
     c === "preparing" ? o.status === "preparing" || o.status === "pending" : o.status === c;

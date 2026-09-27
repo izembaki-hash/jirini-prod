@@ -828,6 +828,39 @@ export async function buildApp(db?: DbPort) {
       res.status(201).json(await dbx.createBranch({ tenantId: t, name: b.name, address: b.address }));
     } catch (e) { next(e); }
   });
+  // نقل حقيقي بين فروع: يخصم من المصدر (مع تنبيه النقص) ويضيف للوجهة
+  // (يُطابق المنتج بالاسم، وإلا تُنشأ نسخة في الوجهة بنفس السمات والكمية المحوّلة).
+  app.post("/branches/transfer", requireAuth, requireRole("owner", "manager"), requirePage("branches"), async (req, res, next) => {
+    try {
+      const t = req.auth!.tenant_id;
+      const b = z.object({
+        productId: z.string().min(1),
+        fromBranchId: z.string().min(1),
+        toBranchId: z.string().min(1),
+        qty: z.number().int().min(1).max(100000),
+      }).parse(req.body);
+      if (b.fromBranchId === b.toBranchId) throw Object.assign(new Error("same_branch"), { status: 400 });
+      const branches = await dbx.listBranches(t);
+      const from = branches.find((x) => x.id === b.fromBranchId);
+      const to = branches.find((x) => x.id === b.toBranchId);
+      if (!from) throw new Error("branch");
+      if (!to) throw new Error("branch");
+      const src = (await dbx.listProducts(t, b.fromBranchId)).find((p) => p.id === b.productId);
+      if (!src) throw new Error("product");
+      if (src.qty < b.qty) throw Object.assign(new Error(`insufficient_stock:${src.name}:${src.qty}`), { status: 409 });
+      const key = (s: string) => s.trim().toLocaleLowerCase();
+      const dst = (await dbx.listProducts(t, b.toBranchId)).find((p) => key(p.name) === key(src.name));
+      const afterSrc = await applyStockDown(t, src.id, b.qty, `transfer → ${to.name}`);
+      let afterDst;
+      if (dst) {
+        afterDst = await dbx.adjustStock(t, dst.id, b.qty, `transfer ← ${from.name}`);
+      } else {
+        const { id: _moved, ...clone } = src;
+        afterDst = await dbx.createProduct({ ...clone, branchId: b.toBranchId, qty: b.qty });
+      }
+      res.json({ from: afterSrc, to: afterDst });
+    } catch (e) { next(e); }
+  });
 
   // ═══ الفوترة والاشتراكات ═══
   // التدفق: trialing (30 يوماً) → SofizPay أونلاين (تفعيل تلقائي) أو CCP/تحويل + مرجع
@@ -1563,7 +1596,7 @@ export async function buildApp(db?: DbPort) {
       const m = typeof e.meta?.model === "string" ? e.meta.model.toLowerCase() : undefined;
       res.status(404).json({ error: "not_found", ...(m ? { entity: m } : {}) }); return;
     }
-    const entities = ["product", "order", "shift", "goal", "recipe", "supplier", "purchase", "driver", "tenant", "payment", "overhead", "customer", "employee", "user"];
+    const entities = ["product", "order", "shift", "goal", "recipe", "supplier", "purchase", "driver", "tenant", "payment", "overhead", "customer", "employee", "user", "branch"];
     if (e.message && entities.includes(e.message)) {
       res.status(404).json({ error: "not_found", entity: e.message }); return;
     }

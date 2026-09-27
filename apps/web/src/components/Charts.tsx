@@ -1,15 +1,17 @@
 // رسوم SVG خفيفة بدون مكتبات (أداء + وضع داكن تلقائي).
-export function Bars({ data, height = 120 }: { data: number[]; height?: number }) {
+export function Bars({ data, height = 120, stretch = false, highlight }: { data: number[]; height?: number; stretch?: boolean; highlight?: number }) {
   const max = Math.max(1, ...data);
   const w = 320;
   const bw = w / data.length;
+  const hi = highlight === undefined || highlight < 0 ? data.length - 1 : highlight;
   return (
-    <svg viewBox={`0 0 ${w} ${height}`} className="w-full" role="img" aria-label="sales chart">
+    <svg viewBox={`0 0 ${w} ${height}`} className={stretch ? "h-full w-full" : "w-full"}
+      preserveAspectRatio={stretch ? "none" : undefined} role="img" aria-label="sales chart">
       {data.map((v, i) => {
         const h = Math.max(4, (v / max) * (height - 16));
         return (
           <rect key={i} x={i * bw + 4} y={height - h} width={bw - 8} rx={4}
-            fill={i === data.length - 1 ? "var(--color-growth)" : "var(--color-line)"} height={h} />
+            fill={i === hi ? "var(--color-growth)" : "var(--color-line)"} height={h} />
         );
       })}
     </svg>

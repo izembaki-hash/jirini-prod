@@ -3,7 +3,7 @@ import QRCode from "react-qr-code";
 import { Link } from "react-router-dom";
 import { fmtDzd, useStore, type Order, type OrderStatus } from "../store";
 import { toast } from "sonner";
-import { api, type ApiOrder } from "../api";
+import { api, toOrder, currentBranch } from "../api";
 import { connected, useAuth } from "../auth";
 import { t, type TKey } from "../i18n";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Empty, Field, Input, Segmented, StatusDot } from "../ui";
@@ -16,13 +16,7 @@ const STKEY: Record<OrderStatus, TKey> = {
   onway: "stOnway", delivered: "stDelivered", cancelled: "stCancelled",
 };
 
-const mapApi = (o: ApiOrder): Order => ({
-  id: o.id, num: o.num, kind: o.kind, table: o.tableNo ?? undefined,
-  status: o.status as Order["status"],
-  lines: o.lines.map((l) => ({ productId: l.productId, name: l.name, qty: l.qty, price: l.price })),
-  discount: o.discount, pay: o.payMethod as Order["pay"], at: o.createdAt, total: o.total,
-  driverId: o.driverId ?? null, driverName: o.driver?.name,
-});
+const mapApi = toOrder;
 
 export default function Orders() {
   const { s, update } = useStore();
@@ -34,15 +28,17 @@ export default function Orders() {
   const [remoteOrders, setRemoteOrders] = useState<Order[] | null>(null);
   const [tab, setTab] = useState<"orders" | "delivery">("orders");
 
+  // مفتاح الفرع النشط — تغييره يعيد جلب قائمة الطلبات المخصّصة له.
+  const branchKey = s.branches.find((b) => b.name === s.branch)?.id ?? currentBranch() ?? "";
   useEffect(() => {
     if (connected()) {
-      api.listOrders().then((list) => setRemoteOrders(list.map(mapApi))).catch(() => null);
+      api.listOrders(undefined, { branch: currentBranch() ?? undefined }).then((list) => setRemoteOrders(list.map(mapApi))).catch(() => null);
       api.listDrivers().then((list) => update((p) => ({
         ...p,
         drivers: list.map((d) => ({ id: d.id, name: d.name, phone: d.phone, vehicle: d.vehicle ?? undefined, kind: (d.kind === "external" ? "external" : "internal") as "internal" | "external", active: d.active })),
       }))).catch(() => null);
     }
-  }, [update]);
+  }, [update, branchKey]);
 
   const orders = remoteOrders ?? s.orders;
   const setStatus = (id: string, st: OrderStatus) => {

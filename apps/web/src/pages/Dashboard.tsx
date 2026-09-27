@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { fmtDzd, todayKey, useStore, displayName, dailySlice, laborFor } from "../store";
-import { api } from "../api";
+import { api, type ApiOrder } from "../api";
 import { connected, useAuth, canSee } from "../auth";
 import { t } from "../i18n";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Empty, Progress, StatusDot } from "../ui";
@@ -55,6 +55,8 @@ export default function Dashboard() {
     sales: number; profit: number; perDay: number[]; top: { name: string; qty: number }[];
     invoices: number; todayNet?: number; todayBreakdown?: import("../api").ProfitBd;
   } | null>(null);
+  // طلبات اليوم لجميع الفروع (لتفصيل البطاقة) — تُجلب فقط عند أكثر من فرع
+  const [dayOrders, setDayOrders] = useState<ApiOrder[] | null>(null);
   const [showBd, setShowBd] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
   // Escape يغلق نافذة التفصيل ويعيد التركيز لزر الفتح (better-accessibility §3)
@@ -78,6 +80,11 @@ export default function Dashboard() {
       })).catch(() => null);
     }
   }, []);
+  useEffect(() => {
+    if (!connected() || s.branches.length < 2) { setDayOrders(null); return; }
+    const since = new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+    api.listOrders(undefined, { since }).then(setDayOrders).catch(() => setDayOrders(null));
+  }, [s.branches.length]);
   const sales = remote?.sales ?? today.filter((o) => o.status !== "cancelled").reduce((x, o) => x + o.total, 0);
   // تفصيل اليوم محلياً (الخادم يرجع الجاهز عند الاتصال)
   const tLive = today.filter((o) => o.status !== "cancelled");
@@ -105,6 +112,11 @@ export default function Dashboard() {
   const top5 = remote?.top.map((x) => [x.name, x.qty] as [string, number])
     ?? Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5);
   const invoiceCount = remote?.invoices ?? s.orders.length;
+
+  // مبيعات اليوم لكل فرع من branchId الحقيقية (لا قسمة بالتساوي)
+  const byBranch = new Map<string, number>();
+  const dayRows = dayOrders ? dayOrders.filter((o) => o.status !== "cancelled") : tLive;
+  for (const o of dayRows) byBranch.set(o.branchId ?? "", (byBranch.get(o.branchId ?? "") ?? 0) + o.total);
 
   const low = s.products.filter((p) => p.qty <= p.min);
   const expiring = s.products.filter((p) => p.expiry && p.qty > 0 &&
@@ -225,7 +237,7 @@ export default function Dashboard() {
               <p className="text-sm text-muted">{t(L, "oneBranch")} ({s.branch}). {t(L, "brCompare")}</p>
             ) : (
               <ul className="flex flex-col gap-2 text-sm">
-                {s.branches.map((b) => <li key={b} className="flex justify-between border-t border-line pt-2 first:border-0 first:pt-0"><span>{b}</span><span className="tnum font-bold">{fmtDzd(sales / s.branches.length)}</span></li>)}
+                {s.branches.map((b) => <li key={b.id} className="flex justify-between border-t border-line pt-2 first:border-0 first:pt-0"><span className="truncate">{b.name}</span><span className="tnum font-bold">{fmtDzd(byBranch.get(b.id) ?? 0)}</span></li>)}
               </ul>
             )}
           </CardContent>

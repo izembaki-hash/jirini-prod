@@ -1,5 +1,7 @@
 // عميل الـAPI الإنتاجي. نفس الأصل افتراضياً (يُمرَّر عبر البروكسي في الإنتاج).
 // اضبط VITE_API_URL صراحةً لتوجيهه لخادم آخر (مثلاً http://localhost:4000 للتطوير المحلي).
+import type { Order, Product } from "./store";
+
 const envUrl = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") ?? "";
 export const API_BASE: string = envUrl || (typeof window !== "undefined" ? window.location.origin : "");
 
@@ -106,7 +108,8 @@ export const api = {
   }>("/tenant"),
   tenantPatch: (patch: Record<string, unknown>) =>
     req<Record<string, unknown>>("/tenant", { method: "PATCH", body: JSON.stringify(patch) }),
-  listProducts: () => req<ApiProduct[]>("/products"),
+  listProducts: (branchId?: string) =>
+    req<ApiProduct[]>(`/products${branchId ? `?branch=${encodeURIComponent(branchId)}` : ""}`),
   createProduct: (p: Record<string, unknown>) =>
     req<ApiProduct>("/products", { method: "POST", body: JSON.stringify(p) }),
   updateProduct: (id: string, patch: Record<string, unknown>) =>
@@ -115,8 +118,14 @@ export const api = {
     req<ApiProduct>(`/products/${id}/stock`, { method: "POST", body: JSON.stringify({ delta, reason }) }),
   summary: (days = 7) =>
     req<{ sales: number; profit: number; invoices: number; avgBasket: number; todaySales: number; todayProfit: number; todayNet?: number; breakdown?: ProfitBd; methodSplit?: { cash: number; card: number }; todayBreakdown?: ProfitBd; perDay: { date: string; sales: number; profit?: number; net?: number }[]; top: { name: string; qty: number; revenue?: number; cost?: number; margin?: number }[] }>(`/reports/summary?days=${days}`),
-  listOrders: (status?: string) =>
-    req<ApiOrder[]>(`/orders${status ? `?status=${status}` : ""}`),
+  listOrders: (status?: string, opts?: { branch?: string; since?: string }) => {
+    const q = new URLSearchParams();
+    if (status) q.set("status", status);
+    if (opts?.branch) q.set("branch", opts.branch);
+    if (opts?.since) q.set("since", opts.since);
+    const s = q.toString();
+    return req<ApiOrder[]>(`/orders${s ? `?${s}` : ""}`);
+  },
   setOrderStatus: (id: string, status: string) =>
     req<ApiOrder>(`/orders/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
   createOrder: (o: Record<string, unknown>) =>
@@ -220,6 +229,8 @@ export const api = {
   branchesList: () => req<ApiBranch[]>("/branches"),
   branchesCreate: (b: { name: string; address?: string }) =>
     req<ApiBranch>("/branches", { method: "POST", body: JSON.stringify(b) }),
+  branchesTransfer: (t: { productId: string; fromBranchId: string; toBranchId: string; qty: number }) =>
+    req<{ from: ApiProduct; to: ApiProduct }>("/branches/transfer", { method: "POST", body: JSON.stringify(t) }),
 };
 
 // ─── لوحة المشغّل: مفتاح OPERATOR_KEY في الترويسة (لا JWT) ───
@@ -291,7 +302,25 @@ export interface ApiOrder {
   total: number; discount: number; payMethod: string; createdAt: string;
   driverId?: string | null; driver?: { id: string; name: string } | null;
   warnings?: { productId: string; name: string; missing: number }[];
+  branchId?: string | null;
 }
+
+// توحيد تحويل الطلب من الخادم إلى النوع المحلي (المطلوب في كل الصفحات + مبدّل الفروع).
+export const toOrder = (o: ApiOrder): Order => ({
+  id: o.id, num: o.num, kind: o.kind, table: o.tableNo ?? undefined,
+  status: o.status as Order["status"],
+  lines: o.lines.map((l) => ({ productId: l.productId, name: l.name, qty: l.qty, price: l.price })),
+  discount: o.discount, pay: o.payMethod as Order["pay"], at: o.createdAt, total: o.total,
+  driverId: o.driverId ?? null, driverName: o.driver?.name, branchId: o.branchId ?? null,
+});
+
+// توحيد تحويل المنتج (المزامنة الأولية + مبدّل الفروع + صفحة الفروع).
+export const toProduct = (sp: ApiProduct): Product => ({
+  id: sp.id, name: sp.name, nameFr: sp.nameFr ?? sp.name,
+  buy: sp.buyPrice, sell: sp.sellPrice, qty: sp.qty, min: sp.minQty,
+  barcode: sp.barcode ?? undefined, cat: sp.category ?? "عام", active: sp.active,
+  saleable: sp.saleable ?? true, img: sp.imageUrl ?? undefined,
+});
 
 // فرع الخادم الحالي (يُضبط بعد المزامنة) — يُستخدم في POS بدل القيمة الوهمية.
 let branchId: string | null = null;
