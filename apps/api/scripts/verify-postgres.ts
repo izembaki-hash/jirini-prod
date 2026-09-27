@@ -169,6 +169,14 @@ async function main() {
   });
   ok("subscription", (await db.getSubscription(tenant.id))?.status === "trialing");
 
+  // الصفحات القانونية: حفظ + upsert على نفس السجل + سرد
+  const lp1 = await db.saveLegalPage({ key: "privacy", lang: "ar", title: "T1", body: "B1" });
+  ok("legal save", !!lp1.id && lp1.key === "privacy");
+  const lp2 = await db.saveLegalPage({ key: "privacy", lang: "ar", title: "T2", body: "B2" });
+  ok("legal upsert same row", lp2.id === lp1.id && lp2.title === "T2");
+  const legalRows = await db.listLegalPages();
+  ok("legal list", legalRows.some((x) => x.key === "privacy" && x.lang === "ar" && x.title === "T2"));
+
   console.log(failures === 0 ? "PG ALL GREEN" : `${failures} FAILURES`);
   process.exit(failures === 0 ? 0 : 1);
 }

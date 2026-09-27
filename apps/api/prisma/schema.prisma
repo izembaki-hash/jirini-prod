@@ -392,3 +392,14 @@ model Payment {
   @@unique([tenantId, ref])
   @@index([tenantId, status])
 }
+
+model LegalPage {
+  id        String   @id @default(cuid())
+  key       String
+  lang      String
+  title     String
+  body      String
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@unique([key, lang])
+}

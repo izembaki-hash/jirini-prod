@@ -91,16 +91,19 @@ export function isPaid(check: SofizCheckResult, account: string): boolean {
   return true;
 }
 
-export type FetchFn = (url: string) => Promise<{ ok: boolean; json(): Promise<unknown> }>;
+export type FetchFn = (url: string, init?: RequestInit) => Promise<{ ok: boolean; json(): Promise<unknown> }>;
+
+// مهلة إلزامية15ثاً — لا يُعلّق طلب الدفع إن تجمّد المزوّد.
+const SOFIZ_TIMEOUT = () => ({ signal: AbortSignal.timeout(15_000) });
 
 export async function createTransaction(fetchFn: FetchFn, params: SofizCreateParams): Promise<SofizCreateResult> {
-  const res = await fetchFn(buildCreateUrl(params));
+  const res = await fetchFn(buildCreateUrl(params), SOFIZ_TIMEOUT());
   return parseCreateResponse(await res.json().catch(() => ({})));
 }
 
 export async function checkTransaction(fetchFn: FetchFn, base: string, orderNumber: string): Promise<SofizCheckResult> {
   const url = `${base.replace(/\/$/, "")}/cib-transaction-check/?order_number=${encodeURIComponent(orderNumber)}`;
-  const res = await fetchFn(url);
+  const res = await fetchFn(url, SOFIZ_TIMEOUT());
   if (!res.ok) return { ok: false, paid: false };
   return parseCheckResponse(await res.json().catch(() => ({})));
 }

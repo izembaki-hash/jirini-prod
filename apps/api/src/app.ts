@@ -12,6 +12,7 @@ import { createDb, type ConsumedRow, type DbPort, type OrderLineRow, type OrderR
 import { checkPassword, hashPassword, requireAuth, requireRole, requirePage, effectivePages, APP_PAGES, signToken } from "./auth.js";
 import { orderTotal, profitOf, salaryFor, algiersDay, profitBreakdown, dailySlice, PLAN_LIMITS } from "./math.js";
 import { createTransaction as sofizCreate, checkTransaction as sofizCheck, isPaid as sofizIsPaid } from "./sofizpay.js";
+import { DEFAULT_LEGAL } from "./legal-defaults.js";
 
 const normPhone = (p: string) => p.replace(/[\s-]/g, "");
 const STATUSES = ["pending", "preparing", "ready", "onway", "delivered", "cancelled"] as const;
@@ -77,6 +78,13 @@ const zShiftClose = z.object({ closingCash: z.number().min(0), note: z.string().
 
 export function branchOf(req: Request): string | undefined {
   return req.auth?.branch_id ?? undefined;
+  }
+
+// تحقق أن الفرع يخص هذا المستأجر — يمنع ربط منتج/طلب/وردية بفرع أجنبي أو وهمي.
+// الخطأ "branch" يتحول في معالج الأخطاء إلى 404 not_found + entity:branch.
+export async function assertBranch(dbx: DbPort, tenantId: string, branchId: string): Promise<void> {
+  const branches = await dbx.listBranches(tenantId);
+  if (!branches.some((b) => b.id === branchId)) throw new Error("branch");
 }
 
 // صلاحية الاشتراك: تُحجب الكتابة التجارية عند الانتهاء (402). من لا اشتراك له
@@ -107,9 +115,20 @@ export async function buildApp(db?: DbPort) {
   app.set("trust proxy", 1);
   app.use(express.json({ limit: "2mb" }));
 
+  // سجل طلبات تشغيلي (L): المسار فقط — بلا query (قد يحمل توكن SSE) وبلا ترويسات.
+  // يتجاوز نجاح /health (فحص الحاويات كل 15ث) لتقليل الضجيج.
+  app.use((req, res, next) => {
+    const t0 = Date.now();
+    res.on("finish", () => {
+      if (req.path === "/health" && res.statusCode < 400) return;
+      console.log(`[http] ${req.method} ${req.path} ${res.statusCode} ${Date.now() - t0}ms`);
+    });
+    next();
+  });
+
   // كل الفروق: استجابة JSON موحّدة عند تجاوز الحد (بدل نصّ Plain الافتراضي)
   const rateHandler = (_q: unknown, res: Response, _n: unknown) => { res.status(429).json({ error: "rate_limited" }); };
-  const loginLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, handler: rateHandler });
+  const loginLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: Number(process.env.RATE_LIMIT_LOGIN ?? 20), handler: rateHandler });
   const publicLimit = rateLimit({ windowMs: 60 * 1000, max: 30, handler: rateHandler });
   const signupLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, handler: rateHandler });
   const sensitiveLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: Number(process.env.RATE_LIMIT_SENSITIVE ?? 30), handler: rateHandler });
@@ -132,13 +151,17 @@ export async function buildApp(db?: DbPort) {
   // ─── رفع الصور (VPS: قرص محلي — يُستبدل بـ S3/Storage عند الحاجة) ───
   const upDir = process.env.UPLOAD_DIR ?? "./uploads";
   fs.mkdirSync(upDir, { recursive: true });
+  // whitelist صارم: صورة فقط (مطابقة للنوع المصرّح به) — الامتداد من النوع لا من اسم الملف
+  const IMG_EXT: Record<string, string> = {
+    "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "image/gif": ".gif",
+  };
   const upload = multer({
     storage: multer.diskStorage({
       destination: (_r, _f, cb) => cb(null, upDir),
-      filename: (_r, f, cb) => cb(null, `${Date.now()}-${Math.round(Math.random() * 1e6)}${path.extname(f.originalname)}`),
+      filename: (_r, f, cb) => cb(null, `${Date.now()}-${Math.round(Math.random() * 1e6)}${IMG_EXT[f.mimetype] ?? ""}`),
     }),
     limits: { fileSize: 5 * 1024 * 1024 },
-    fileFilter: (_r, f, cb) => cb(null, f.mimetype.startsWith("image/")),
+    fileFilter: (_r, f, cb) => cb(null, Object.hasOwn(IMG_EXT, f.mimetype)),
   });
   app.use("/uploads", express.static(path.resolve(upDir)));
 
@@ -151,6 +174,22 @@ export async function buildApp(db?: DbPort) {
       { id: "pro", priceDzd: 3000, branches: 2, onlineOrdering: true, growthPlanner: true },
       { id: "mega", priceDzd: 4500, branches: 5, onlineOrdering: true, growthPlanner: true },
     ]);
+  });
+
+  // ═══ الصفحات القانونية (خصوصية/شروط) — محتوى عام ثنائي اللغة، يُعدَّل من /ops ═══
+  const LEGAL_KEYS = ["privacy", "terms"] as const;
+  const isLegalKey = (k: string): k is (typeof LEGAL_KEYS)[number] =>
+    (LEGAL_KEYS as readonly string[]).includes(k);
+
+  app.get("/public/legal/:key", publicLimit, async (req, res, next) => {
+    try {
+      const key = req.params.key;
+      if (!isLegalKey(key)) { res.status(404).json({ error: "not_found", entity: "legal_page" }); return; }
+      const rows = await dbx.listLegalPages();
+      const byLang: Record<string, { title: string; body: string }> = {};
+      for (const r of rows) if (r.key === key) byLang[r.lang] = { title: r.title, body: r.body };
+      res.json({ key, ar: byLang.ar ?? DEFAULT_LEGAL[key].ar, fr: byLang.fr ?? DEFAULT_LEGAL[key].fr });
+    } catch (e) { next(e); }
   });
 
   app.post("/public/signup", signupLimit, async (req, res, next) => {
@@ -435,16 +474,20 @@ export async function buildApp(db?: DbPort) {
   // ═══ المنتجات ═══
   app.get("/products", requireAuth, requirePage("pos", "inventory", "kitchen", "orders"), async (req, res, next) => {
     try {
-      res.json(await dbx.listProducts(req.auth!.tenant_id, (req.query.branch as string) || branchOf(req)));
+      const qb = (req.query.branch as string) || undefined;
+      if (qb) await assertBranch(dbx, req.auth!.tenant_id, qb);
+      res.json(await dbx.listProducts(req.auth!.tenant_id, qb || branchOf(req)));
     } catch (e) { next(e); }
   });
 
   app.post("/products", requireAuth, requireRole("owner", "manager"), requirePage("inventory"), async (req, res, next) => {
     try {
       const b = zProduct.parse(req.body);
+      const branchId = branchOf(req) ?? b.branchId;
+      await assertBranch(dbx, req.auth!.tenant_id, branchId);
       res.status(201).json(await dbx.createProduct({
         tenantId: req.auth!.tenant_id, name: b.name, nameFr: b.nameFr ?? b.name,
-        branchId: branchOf(req) ?? b.branchId, buyPrice: b.buyPrice, sellPrice: b.sellPrice, qty: b.qty, minQty: b.minQty,
+        branchId, buyPrice: b.buyPrice, sellPrice: b.sellPrice, qty: b.qty, minQty: b.minQty,
         barcode: b.barcode ?? null, imageUrl: b.imageUrl ?? null,
         category: b.category ?? null, shelf: b.shelf ?? null, expiryDate: b.expiryDate ?? null,
         wholesalePrice: b.wholesalePrice ?? null, active: true, saleable: b.saleable,
@@ -548,9 +591,11 @@ export async function buildApp(db?: DbPort) {
 
   app.get("/orders", requireAuth, requirePage("orders", "kitchen"), async (req, res, next) => {
     try {
+      const qb = (req.query.branch as string) || undefined;
+      if (qb) await assertBranch(dbx, req.auth!.tenant_id, qb);
       const list = await dbx.listOrders(req.auth!.tenant_id, {
         status: (req.query.status as string) || undefined,
-        branchId: (req.query.branch as string) || branchOf(req),
+        branchId: qb || branchOf(req),
         since: (req.query.since as string) || undefined,
       });
       res.json(await richAll(dbx, req.auth!.tenant_id, list));
@@ -564,6 +609,7 @@ export async function buildApp(db?: DbPort) {
       const sub = await subscriptionOk(dbx, t);
       if (!sub.ok) { res.status(402).json({ error: "subscription_expired", reason: sub.reason }); return; }
       const branchId = branchOf(req) ?? b.branchId;
+      await assertBranch(dbx, t, branchId);
       if (b.payMethod === "credit" && !b.phone?.trim()) {
         res.status(400).json({ error: "phone_required" }); return;
       }
@@ -649,6 +695,7 @@ export async function buildApp(db?: DbPort) {
       const b = zShiftOpen.parse(req.body);
       const t = req.auth!.tenant_id;
       const branchId = branchOf(req) ?? b.branchId;
+      await assertBranch(dbx, t, branchId);
       if (await dbx.getOpenShift(t, branchId)) { res.status(400).json({ error: "shift_already_open" }); return; }
       res.status(201).json(await dbx.openShift({
         tenantId: t, branchId, cashierId: b.cashierId,
@@ -1049,6 +1096,20 @@ export async function buildApp(db?: DbPort) {
     }
     next();
   }
+
+  // حفظ صفحة قانونية (محرّر المشغّل في /ops) — upsert حسب (key, lang)
+  app.put("/ops/legal/:key", requireOperator, sensitiveLimit, async (req, res, next) => {
+    try {
+      const key = req.params.key;
+      if (!isLegalKey(key)) { res.status(404).json({ error: "not_found", entity: "legal_page" }); return; }
+      const b = z.object({
+        lang: z.enum(["ar", "fr"]),
+        title: z.string().min(1).max(200),
+        body: z.string().min(1).max(30000),
+      }).parse(req.body);
+      res.json(await dbx.saveLegalPage({ key, lang: b.lang, title: b.title, body: b.body }));
+    } catch (e) { next(e); }
+  });
 
   app.get("/ops/overview", requireOperator, sensitiveLimit, async (_req, res, next) => {
     try {

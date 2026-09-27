@@ -94,6 +94,11 @@ export interface PaymentRow {
   createdAt: string; confirmedAt: string | null;
 }
 
+// صفحة قانونية (خصوصية/شروط) — محتوى عام عالمي (بدون tenant)، ثنائي اللغة
+export interface LegalPageRow {
+  id: string; key: string; lang: string; title: string; body: string; updatedAt: string;
+}
+
 // قاعدة حالة الفاتورة الموحدة (مطبقة في كلا المحوّلين): paid الكامل → paid، صفر → unpaid، وإلا partial.
 export function purchaseStatus(total: number, paid: number): string {
   if (paid <= 0) return "unpaid";
@@ -205,6 +210,9 @@ export interface DbPort {
   setBillingPayment(tenantId: string, id: string, patch: Partial<Pick<PaymentRow, "status" | "sofizTransactionId" | "cibTransactionId" | "confirmedAt">>): Promise<PaymentRow>;
   listBillingPayments(tenantId: string): Promise<PaymentRow[]>;
   listAllBillingPayments(status?: string, limit?: number): Promise<PaymentRow[]>;
+  // صفحات قانونية (محتوى عام — privacy/terms بالعربية والفرنسية)
+  listLegalPages(): Promise<LegalPageRow[]>;
+  saveLegalPage(p: { key: string; lang: string; title: string; body: string }): Promise<LegalPageRow>;
 }
 
 // ─── ذاكرة: تطوير محلي واختبارات — نفس العقد تماماً ───
@@ -530,6 +538,7 @@ export class MemoryAdapter implements DbPort {
   }
 
   billing: PaymentRow[] = [];
+  legal: LegalPageRow[] = [];
   async createBillingPayment(p: Omit<PaymentRow, "id" | "createdAt" | "confirmedAt">) {
     const r: PaymentRow = { ...p, id: uid("pay"), createdAt: now(), confirmedAt: null };
     this.billing.unshift(r); return r;
@@ -553,6 +562,22 @@ export class MemoryAdapter implements DbPort {
   async listAllBillingPayments(status?: string, limit = 200) {
     return this.billing.filter((x) => !status || x.status === status).slice(0, limit);
   }
+  async listLegalPages() {
+    return [...this.legal];
+  }
+  async saveLegalPage(p: { key: string; lang: string; title: string; body: string }) {
+    const cur = this.legal.find((x) => x.key === p.key && x.lang === p.lang);
+    if (cur) {
+      cur.title = p.title; cur.body = p.body; cur.updatedAt = new Date().toISOString();
+      return cur;
+    }
+    const row: LegalPageRow = {
+      id: `lg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      key: p.key, lang: p.lang, title: p.title, body: p.body, updatedAt: new Date().toISOString(),
+    };
+    this.legal.push(row);
+    return row;
+  }
 }
 
 // ─── Postgres عبر Prisma — يُفعَّل عند وجود DATABASE_URL ───
@@ -562,6 +587,7 @@ type PrismaModel = {
   findFirst(a?: unknown): Promise<unknown>; findMany(a?: unknown): Promise<unknown[]>;
   create(a: unknown): Promise<unknown>; update(a: unknown): Promise<unknown>;
   delete(a: unknown): Promise<unknown>; deleteMany(a?: unknown): Promise<unknown>; count(a?: unknown): Promise<number>;
+  upsert(a: unknown): Promise<unknown>;
 };
 type PrismaClientLike = Record<string, PrismaModel> & { $disconnect(): Promise<void> };
 
@@ -1037,6 +1063,16 @@ export class PrismaAdapter implements DbPort {
       where: status ? { status } : {}, orderBy: { createdAt: "desc" }, take: Math.min(500, Math.max(1, limit)),
     }));
   }
+  async listLegalPages() {
+    return PrismaAdapter.row<LegalPageRow[]>(await this.m("legalPage").findMany({ orderBy: [{ key: "asc" }, { lang: "asc" }] }));
+  }
+  async saveLegalPage(p: { key: string; lang: string; title: string; body: string }) {
+    return PrismaAdapter.row<LegalPageRow>(await this.m("legalPage").upsert({
+      where: { key_lang: { key: p.key, lang: p.lang } },
+      create: { key: p.key, lang: p.lang, title: p.title, body: p.body },
+      update: { title: p.title, body: p.body },
+    }));
+  }
   async getSubscription(tenantId: string) {
     return PrismaAdapter.row<SubscriptionRow | null>(
       await this.m("subscription").findFirst({ where: { tenantId } }));
@@ -1057,7 +1093,9 @@ export class PrismaAdapter implements DbPort {
   }
 }
 
-// ─── المصنع: Postgres عند توفر قاعدة حقيقية، وإلا ذاكرة ───
+// ─── المصنع: Postgres عند توفر قاعدة حقيقية، وإلا ذاكرة (تطوير محلي فقط) ───
+// مع DATABASE_URL: أي فشل في Prisma/الاتصال يجب أن يوقف الإقلاع —
+// لا يوجد بديل ذاكرة صامت في الإنتاج أبداً (فقدان بيانات بلا أثر).
 export async function createDb(): Promise<DbPort> {
   if (process.env.DATABASE_URL) {
     try {
@@ -1066,7 +1104,9 @@ export async function createDb(): Promise<DbPort> {
       console.log("[db] postgres via Prisma");
       return new PrismaAdapter(prisma);
     } catch (e) {
-      console.warn("[db] Prisma unavailable, falling back to memory:", (e as Error).message);
+      throw new Error(
+        `Prisma unavailable while DATABASE_URL is set — refusing to start in memory mode: ${(e as Error).message}`,
+      );
     }
   }
   return new MemoryAdapter();

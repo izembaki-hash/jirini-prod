@@ -5,14 +5,16 @@ process.env.OPERATOR_KEY ??= "verify-operator-key";
 process.env.SOFIZPAY_ACCOUNT ??= "GTEST";
 process.env.RATE_LIMIT_SENSITIVE ??= "1000";
 import { buildApp } from "../src/app.js";
-import { MemoryAdapter } from "../src/db.js";
+import { MemoryAdapter, createDb } from "../src/db.js";
 import { hashPassword } from "../src/auth.js";
 
 const PORT = 4999;
 const BASE = `http://localhost:${PORT}`;
 let failures = 0;
+let total = 0;
 const ok = (name: string, cond: boolean, extra = "") => {
-  console.log(`${cond ? "PASS" : "FAIL"} ${name}${extra ? ` â€” ${extra}` : ""}`);
+  total++;
+  console.log(`${cond ? "PASS" : "FAIL"} ${name}${extra ? ` — ${extra}` : ""}`);
   if (!cond) failures++;
 };
 
@@ -635,8 +637,74 @@ async function main() {
   const bigJson = await bigRes.json().catch(() => ({}) as unknown) as { error?: string };
   ok("oversize body → payload_too_large", bigRes.status === 413 && bigJson.error === "payload_too_large", `got ${bigRes.status} ${JSON.stringify(bigJson)}`);
 
+  // ═══ ما بعد مراجعة الإطلاق (P0/P1): تحقق الفروع + الصفحات القانونية + الأمان ═══
+
+  // C: فرع وهمي أو أجنبي مرفوض بـ404 entity:branch على كل نقاط الكتابة
+  r = await call("POST", "/products", { name: "وهمي", branchId: "no-such-branch", buyPrice: 1, sellPrice: 2, qty: 1 }, ownerTok2);
+  ok("product fake branch → 404 branch", r.status === 404 && r.json.error === "not_found" && r.json.entity === "branch",
+    `got ${r.status} ${JSON.stringify(r.json)}`);
+  r = await call("POST", "/products", { name: "أجنبي", branchId: expBranch.id, buyPrice: 1, sellPrice: 2, qty: 1 }, ownerTok2);
+  ok("product foreign-tenant branch → 404 branch", r.status === 404 && r.json.entity === "branch",
+    `got ${r.status} ${JSON.stringify(r.json)}`);
+  r = await call("POST", "/orders", {
+    branchId: "no-such-branch", kind: "dinein", lines: [{ productId: p1.id, qty: 1 }],
+    discount: 0, tax: 0, payMethod: "cash",
+  }, ownerTok2);
+  ok("order fake branch → 404 branch", r.status === 404 && r.json.entity === "branch",
+    `got ${r.status} ${JSON.stringify(r.json)}`);
+  r = await call("POST", "/shifts/open", { branchId: "no-such-branch", openingCash: 0, cashierId: "c1" }, ownerTok2);
+  ok("shift open fake branch → 404 branch", r.status === 404 && r.json.entity === "branch",
+    `got ${r.status} ${JSON.stringify(r.json)}`);
+  r = await call("GET", "/products?branch=no-such-branch", undefined, ownerTok2);
+  ok("products ?branch fake → 404 branch", r.status === 404 && r.json.entity === "branch", `got ${r.status}`);
+  r = await call("GET", "/orders?branch=no-such-branch", undefined, ownerTok2);
+  ok("orders ?branch fake → 404 branch", r.status === 404 && r.json.entity === "branch", `got ${r.status}`);
+  r = await call("GET", `/products?branch=${expBranch.id}`, undefined, ownerTok2);
+  ok("products ?branch foreign → 404 branch", r.status === 404 && r.json.entity === "branch", `got ${r.status}`);
+
+  // E2: الصفحات القانونية — قراءة عامة + حفظ المشغّل
+  r = await call("GET", "/public/legal/privacy");
+  ok("legal privacy defaults", r.status === 200 && (r.json as { key: string }).key === "privacy"
+    && typeof (r.json as { ar: { title: string } }).ar.title === "string"
+    && typeof (r.json as { fr: { body: string } }).fr.body === "string");
+  r = await call("GET", "/public/legal/terms");
+  ok("legal terms defaults", r.status === 200 && typeof (r.json as { fr: { title: string } }).fr.title === "string");
+  r = await call("GET", "/public/legal/nope");
+  ok("legal unknown key → 404", r.status === 404);
+  r = await call("PUT", "/ops/legal/privacy", { lang: "ar", title: "x", body: "y" }, undefined, { "x-operator-key": "wrong" });
+  ok("legal save wrong operator → 401", r.status === 401);
+  r = await call("PUT", "/ops/legal/privacy", { lang: "de", title: "x", body: "y" }, undefined, opH);
+  ok("legal save bad lang → 400", r.status === 400);
+  r = await call("PUT", "/ops/legal/privacy", { lang: "ar", title: "سياسة محدثة", body: "نص محدث بالكامل" }, undefined, opH);
+  ok("legal save → 200", r.status === 200 && typeof (r.json as { id: string }).id === "string");
+  r = await call("GET", "/public/legal/privacy");
+  ok("edited legal content visible", r.status === 200 && (r.json as { ar: { title: string } }).ar.title === "سياسة محدثة");
+  r = await call("PUT", "/ops/legal/unknown", { lang: "ar", title: "x", body: "y" }, undefined, opH);
+  ok("legal save unknown key → 404", r.status === 404);
+
+  // D: رفع الملفات — صور فقط
+  const fdTxt = new FormData();
+  fdTxt.append("file", new Blob(["#!/bin/sh"], { type: "text/plain" }), "evil.txt");
+  const upTxt = await fetch(`${BASE}/upload`, { method: "POST", headers: { Authorization: `Bearer ${ownerTok2}` }, body: fdTxt });
+  ok("upload non-image → 400", upTxt.status === 400, `got ${upTxt.status}`);
+
+  // D: JWT مزوّد/مزوّد عليه مرفوض
+  const noneJwt = "eyJhbGciOiJub25lIn0.eyJhdXRoIjp7InRlbmFudF9pZCI6IngiLCJyb2xlIjoib3duZXIifX0.";
+  r = await call("GET", "/products", undefined, noneJwt);
+  ok("alg-none JWT → 401", r.status === 401, `got ${r.status}`);
+  const evilRes = await fetch(`${BASE}/health`, { headers: { Origin: "https://evil.example" } });
+  ok("evil origin not reflected", (evilRes.headers.get("access-control-allow-origin") ?? "") !== "https://evil.example");
+
+  // B: مع DATABASE_URL المكسور — لا fallback ذاكرة صامت أبداً
+  const savedUrl = process.env.DATABASE_URL;
+  process.env.DATABASE_URL = "not-a-valid-postgres-url";
+  const fb = await createDb().catch(() => null);
+  ok("createDb never silent-memory with DATABASE_URL", fb === null || fb.kind !== "memory",
+    `kind=${fb ? fb.kind : "threw"}`);
+  process.env.DATABASE_URL = savedUrl;
+
   server.close();
-  console.log(failures === 0 ? "ALL GREEN" : `${failures} FAILURES`);
+  console.log(failures === 0 ? `ALL GREEN (${total} checks)` : `${failures} FAILURES of ${total}`);
   process.exit(failures === 0 ? 0 : 1);
 }
 
