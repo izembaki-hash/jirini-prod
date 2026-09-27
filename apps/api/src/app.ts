@@ -87,6 +87,18 @@ export async function assertBranch(dbx: DbPort, tenantId: string, branchId: stri
   if (!branches.some((b) => b.id === branchId)) throw new Error("branch");
 }
 
+// حارس موظف للتوكن المربوط بفرع: مدير فرع لا يمسّ موظفاً خارج فرعه.
+// الخطأ "employee" → 404 not_found + entity:employee (نفس نمط assertBranch).
+export async function assertOwnEmployee(dbx: DbPort, tenantId: string, branchId: string | undefined, employeeId: string): Promise<void> {
+  if (!branchId) return;
+  const emp = (await dbx.listEmployees(tenantId)).find((e) => e.id === employeeId);
+  if (!emp || emp.branchId !== branchId) throw new Error("employee");
+}
+
+// فلتر قوائم بالفرع المربوط في التوكن — بلا توكن فرع = الكل (المالك يرى كل الفروع).
+const ownRows = <T extends { branchId: string }>(rows: T[], branchId: string | undefined): T[] =>
+  branchId ? rows.filter((r) => r.branchId === branchId) : rows;
+
 // صلاحية الاشتراك: تُحجب الكتابة التجارية عند الانتهاء (402). من لا اشتراك له
 // (مستأجرو ما قبل الفوترة) يُعامل كقديم معفى مع تحذير في السجل.
 async function subscriptionOk(dbx: DbPort, tenantId: string): Promise<{ ok: boolean; reason?: string }> {
@@ -333,13 +345,14 @@ export async function buildApp(db?: DbPort) {
   });
 
   app.get("/employees", requireAuth, requireRole("owner", "manager"), requirePage("staff"), async (req, res, next) => {
-    try { res.json(await dbx.listEmployees(req.auth!.tenant_id)); }
+    try { res.json(ownRows(await dbx.listEmployees(req.auth!.tenant_id), branchOf(req))); }
     catch (e) { next(e); }
   });
 
   // تعديل بيانات موظف (المسمى/الأجر/الاسم) — الصلاحية تبقى من حساب الدخول
   app.patch("/employees/:id", requireAuth, requireRole("owner", "manager"), requirePage("staff"), async (req, res, next) => {
     try {
+      await assertOwnEmployee(dbx, req.auth!.tenant_id, branchOf(req), req.params.id);
       const b = z.object({
         name: z.string().min(2).optional(), title: z.string().max(60).nullable().optional(),
         halfWage: z.number().min(0).optional(),
@@ -354,14 +367,22 @@ export async function buildApp(db?: DbPort) {
 
   // حذف موظف (يُسقط الحضور والسلف تلقائياً — cascade) ويفكّ ربط حساباته
   app.delete("/employees/:id", requireAuth, requireRole("owner", "manager"), requirePage("staff"), async (req, res, next) => {
-    try { await dbx.deleteEmployee(req.auth!.tenant_id, req.params.id); res.json({ ok: true }); }
-    catch (e) { next(e); }
+    try {
+      await assertOwnEmployee(dbx, req.auth!.tenant_id, branchOf(req), req.params.id);
+      await dbx.deleteEmployee(req.auth!.tenant_id, req.params.id); res.json({ ok: true });
+    } catch (e) { next(e); }
   });
 
   // سلف/خصومات الموظفين (تُطرح من إجمالي الأجر = الصافي)
   app.get("/salary-advances", requireAuth, requireRole("owner", "manager"), requirePage("staff"), async (req, res, next) => {
-    try { res.json(await dbx.listAdvances(req.auth!.tenant_id, (req.query.employee as string) || undefined)); }
-    catch (e) { next(e); }
+    try {
+      const t = req.auth!.tenant_id;
+      const pin = branchOf(req);
+      const list = await dbx.listAdvances(t, (req.query.employee as string) || undefined);
+      if (!pin) { res.json(list); return; }
+      const own = new Set(ownRows(await dbx.listEmployees(t), pin).map((e) => e.id));
+      res.json(list.filter((a) => own.has(a.employeeId)));
+    } catch (e) { next(e); }
   });
   app.post("/salary-advances", requireAuth, requireRole("owner", "manager"), requirePage("staff"), sensitiveLimit, async (req, res, next) => {
     try {
@@ -369,6 +390,7 @@ export async function buildApp(db?: DbPort) {
         employeeId: z.string().min(1), amount: z.number().positive().max(100000000),
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), note: z.string().max(200).optional(),
       }).parse(req.body);
+      await assertOwnEmployee(dbx, req.auth!.tenant_id, branchOf(req), b.employeeId);
       const emps = await dbx.listEmployees(req.auth!.tenant_id);
       if (!emps.some((e) => e.id === b.employeeId)) { res.status(404).json({ error: "not_found" }); return; }
       res.status(201).json(await dbx.createAdvance({
@@ -378,8 +400,16 @@ export async function buildApp(db?: DbPort) {
     } catch (e) { next(e); }
   });
   app.delete("/salary-advances/:id", requireAuth, requireRole("owner", "manager"), requirePage("staff"), async (req, res, next) => {
-    try { await dbx.deleteAdvance(req.auth!.tenant_id, req.params.id); res.json({ ok: true }); }
-    catch (e) { next(e); }
+    try {
+      const t = req.auth!.tenant_id;
+      const pin = branchOf(req);
+      if (pin) {
+        const adv = (await dbx.listAdvances(t)).find((a) => a.id === req.params.id);
+        if (!adv) { res.status(404).json({ error: "not_found" }); return; }
+        await assertOwnEmployee(dbx, t, pin, adv.employeeId);
+      }
+      await dbx.deleteAdvance(t, req.params.id); res.json({ ok: true });
+    } catch (e) { next(e); }
   });
 
   // تغيير كلمة السر (تتطلب الحالية) — أول ما يجب فعله بعد بذرة demo1234
@@ -400,15 +430,23 @@ export async function buildApp(db?: DbPort) {
     try {
       const b = zUser.parse(req.body);
       const t = req.auth!.tenant_id;
-      // فرع المدير يُفرض؛ المالك يختار
+      const phone = normPhone(b.phone);
+      // لا يُنشأ حساب مالك إلا من المالك
+      if (b.role === "owner" && req.auth!.role !== "owner") { res.status(403).json({ error: "forbidden" }); return; }
+      // هاتف فريد داخل المحل (حتى لو كان الحساب معطّلاً)
+      if ((await dbx.listUsers(t)).some((u) => u.phone === phone)) {
+        res.status(409).json({ error: "duplicate_phone" }); return;
+      }
+      // فرع المدير يُفرض؛ المالك يختار (والفرع المُختار يُتحقق منه)
       const empBranch = branchOf(req) ?? b.branchId ?? req.auth!.branch_id ?? "main";
+      if (b.branchId && !branchOf(req)) await assertBranch(dbx, t, b.branchId);
       const emp = await dbx.createEmployee({
         tenantId: t, branchId: empBranch,
         name: b.name, role: b.role, title: b.title?.trim() || null,
         hiredAt: new Date().toISOString().slice(0, 10), hourlyRate: 0, halfWage: b.halfWage,
       });
       const user = await dbx.createUser({
-        tenantId: t, employeeId: emp.id, name: b.name, phone: normPhone(b.phone),
+        tenantId: t, employeeId: emp.id, name: b.name, phone,
         passwordHash: await hashPassword(b.password), pinHash: null, pages: null, role: b.role,
         branchId: empBranch === "main" ? null : empBranch, active: true,
       });
@@ -416,14 +454,38 @@ export async function buildApp(db?: DbPort) {
     } catch (e) { next(e); }
   });
 
-  // قائمة حسابات الدخول (لصفحة العمال: ربط كل موظف بحسابه + حالة الكود والصفحات)
+  // قائمة حسابات الدخول (لصفحة الفروع: ربط كل حساب بفرعه + بيانات الدخول)
   app.get("/auth/users", requireAuth, requireRole("owner"), async (req, res, next) => {
     try {
       const users = await dbx.listUsers(req.auth!.tenant_id);
       res.json(users.map((u) => ({
         id: u.id, employeeId: u.employeeId, name: u.name, role: u.role,
+        phone: u.phone, branchId: u.branchId,
         hasPin: !!u.pinHash, pages: u.pages ?? null, active: u.active,
       })));
+    } catch (e) { next(e); }
+  });
+
+  // إعادة تعيين كلمة سر حساب (المالك — لا يحتاج الحالية)
+  app.post("/auth/users/:id/password", requireAuth, requireRole("owner"), sensitiveLimit, async (req, res, next) => {
+    try {
+      const b = z.object({ password: z.string().min(6) }).parse(req.body);
+      // بحث عبر القائمة لأن findUserById يستبعد المعطّلين (يجب أن يبقى التفعيل/التعطيل ممكناً)
+      const u = (await dbx.listUsers(req.auth!.tenant_id)).find((x) => x.id === req.params.id);
+      if (!u || u.role === "owner") { res.status(404).json({ error: "not_found" }); return; }
+      await dbx.setUserPassword(req.auth!.tenant_id, u.id, await hashPassword(b.password));
+      res.json({ ok: true });
+    } catch (e) { next(e); }
+  });
+
+  // تفعيل/تعطيل حساب دخول (المالك) — المعطّل يُمنع من الدخول تلقائياً
+  app.patch("/auth/users/:id", requireAuth, requireRole("owner"), sensitiveLimit, async (req, res, next) => {
+    try {
+      const b = z.object({ active: z.boolean() }).parse(req.body);
+      const u = (await dbx.listUsers(req.auth!.tenant_id)).find((x) => x.id === req.params.id);
+      if (!u || u.role === "owner") { res.status(404).json({ error: "not_found" }); return; }
+      const updated = await dbx.setUserActive(req.auth!.tenant_id, u.id, b.active);
+      res.json({ id: updated.id, active: updated.active });
     } catch (e) { next(e); }
   });
 
@@ -723,7 +785,7 @@ export async function buildApp(db?: DbPort) {
   });
 
   app.get("/shifts", requireAuth, requireRole("owner", "manager"), requirePage("shifts"), async (req, res, next) => {
-    try { res.json(await dbx.listShifts(req.auth!.tenant_id)); }
+    try { res.json(ownRows(await dbx.listShifts(req.auth!.tenant_id), branchOf(req))); }
     catch (e) { next(e); }
   });
 
@@ -735,6 +797,7 @@ export async function buildApp(db?: DbPort) {
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
         status: z.enum(["full", "half", "absent"]),
       }).parse(req.body);
+      await assertOwnEmployee(dbx, req.auth!.tenant_id, branchOf(req), b.employeeId);
       res.status(201).json(await dbx.markAttendance({
         tenantId: req.auth!.tenant_id, employeeId: b.employeeId,
         date: b.date ?? algiersDay(), status: b.status,
@@ -743,14 +806,21 @@ export async function buildApp(db?: DbPort) {
   });
 
   app.get("/attendance", requireAuth, requireRole("owner", "manager"), requirePage("staff"), async (req, res, next) => {
-    try { res.json(await dbx.listAttendance(req.auth!.tenant_id, (req.query.date as string) || undefined)); }
-    catch (e) { next(e); }
+    try {
+      const t = req.auth!.tenant_id;
+      const pin = branchOf(req);
+      const list = await dbx.listAttendance(t, (req.query.date as string) || undefined);
+      if (!pin) { res.json(list); return; }
+      const own = new Set(ownRows(await dbx.listEmployees(t), pin).map((e) => e.id));
+      res.json(list.filter((a) => own.has(a.employeeId)));
+    } catch (e) { next(e); }
   });
 
   app.get("/salaries", requireAuth, requireRole("owner", "manager"), requirePage("staff"), async (req, res, next) => {
     try {
       const t = req.auth!.tenant_id;
-      const [emps, att] = await Promise.all([dbx.listEmployees(t), dbx.listAttendance(t)]);
+      const emps = ownRows(await dbx.listEmployees(t), branchOf(req));
+      const att = await dbx.listAttendance(t);
       res.json(emps.map((e) => ({
         employee: e,
         total: salaryFor(att.filter((a) => a.employeeId === e.id), e.halfWage),
@@ -861,7 +931,11 @@ export async function buildApp(db?: DbPort) {
 
   // ═══ الفروع (حد الخطة يُفرض في الخادم) ═══
   app.get("/branches", requireAuth, async (req, res, next) => {
-    try { res.json(await dbx.listBranches(req.auth!.tenant_id)); }
+    try {
+      const pin = branchOf(req);
+      const all = await dbx.listBranches(req.auth!.tenant_id);
+      res.json(pin ? all.filter((b) => b.id === pin) : all);
+    }
     catch (e) { next(e); }
   });
   app.post("/branches", requireAuth, requireRole("owner"), requirePage("branches"), async (req, res, next) => {
@@ -886,6 +960,9 @@ export async function buildApp(db?: DbPort) {
         toBranchId: z.string().min(1),
         qty: z.number().int().min(1).max(100000),
       }).parse(req.body);
+      // مدير مربوط بفرع لا ينقل من فرع غير فرعه
+      const pin = branchOf(req);
+      if (pin && b.fromBranchId !== pin) { res.status(403).json({ error: "branch_forbidden" }); return; }
       if (b.fromBranchId === b.toBranchId) throw Object.assign(new Error("same_branch"), { status: 400 });
       const branches = await dbx.listBranches(t);
       const from = branches.find((x) => x.id === b.fromBranchId);
@@ -1290,20 +1367,33 @@ export async function buildApp(db?: DbPort) {
       const t = req.auth!.tenant_id;
       const days = Math.min(90, Math.max(1, Number(req.query.days ?? 7)));
       const since = new Date(Date.now() - days * 86_400_000).toISOString();
-      const [orders, products, employees, attAll, overheads] = await Promise.all([
-        dbx.listOrders(t, { branchId: branchOf(req), since }),
+      // نطاق التقرير: المدير المربوط مقيّد بفرعه دائماً، والمالك قد يختار ?branch=
+      const pin = branchOf(req);
+      const q = typeof req.query.branch === "string" ? req.query.branch.trim() : "";
+      let scope = pin;
+      if (q) {
+        if (pin && q !== pin) { res.status(403).json({ error: "branch_forbidden" }); return; }
+        if (!pin) await assertBranch(dbx, t, q);
+        scope = q;
+      }
+      const [orders, products, employeesAll, attAll, overheads] = await Promise.all([
+        dbx.listOrders(t, { branchId: scope, since }),
         dbx.listProducts(t),
         dbx.listEmployees(t),
         dbx.listAttendance(t),
         dbx.listOverheads(t),
       ]);
+      // العمالة محسوبة على موظفي النطاق المختار فقط (المصروفات تبقى عامة — إعداد مقصود)
+      const employees = ownRows(employeesAll, scope);
+      const ownEmp = new Set(employees.map((e) => e.id));
+      const attScoped = attAll.filter((a) => ownEmp.has(a.employeeId));
       const live = orders.filter((o) => o.status !== "cancelled");
       const sales = live.reduce((x, o) => x + o.total, 0);
       const buy: Record<string, number> = Object.fromEntries(products.map((p) => [p.id, p.buyPrice]));
       const profit = profitOf(live, buy);
       const activeOh = overheads.filter((o) => o.active);
       const dailyOh = activeOh.map((o) => ({ name: o.name, amount: dailySlice(o.monthly) }));
-      const attIn = attAll.filter((a) => a.date >= since.slice(0, 10));
+      const attIn = attScoped.filter((a) => a.date >= since.slice(0, 10));
       const laborOf = (recs: typeof attIn) =>
         employees.reduce((s, e) => s + salaryFor(recs.filter((a) => a.employeeId === e.id), e.halfWage), 0);
       const labor = laborOf(attIn);

@@ -124,6 +124,7 @@ export interface DbPort {
   setUserPassword(tenantId: string, userId: string, passwordHash: string): Promise<void>;
   setUserPin(tenantId: string, userId: string, pinHash: string | null): Promise<void>;
   setUserPages(tenantId: string, userId: string, pages: string[] | null): Promise<UserRow>;
+  setUserActive(tenantId: string, userId: string, active: boolean): Promise<UserRow>;
   listEmployees(tenantId: string): Promise<EmployeeRow[]>;
   createEmployee(e: Omit<EmployeeRow, "id">): Promise<EmployeeRow>;
   updateEmployee(tenantId: string, id: string, patch: Partial<EmployeeRow>): Promise<EmployeeRow>;
@@ -264,6 +265,11 @@ export class MemoryAdapter implements DbPort {
     const u = this.users.find((x) => x.id === userId && x.tenantId === tenantId);
     if (!u) throw new Error("user");
     u.pages = pages; return u;
+  }
+  async setUserActive(tenantId: string, userId: string, active: boolean) {
+    const u = this.users.find((x) => x.id === userId && x.tenantId === tenantId);
+    if (!u) throw new Error("user");
+    u.active = active; return u;
   }
   async listUsers(tenantId: string) {
     return this.users.filter((x) => x.tenantId === tenantId);
@@ -637,6 +643,11 @@ export class PrismaAdapter implements DbPort {
     const cur = await this.m("user").findFirst({ where: { id: userId, tenantId } });
     if (!cur) throw new Error("user");
     return PrismaAdapter.row<UserRow>(await this.m("user").update({ where: { id: userId }, data: { pages: pages as unknown } }));
+  }
+  async setUserActive(tenantId: string, userId: string, active: boolean) {
+    const cur = await this.m("user").findFirst({ where: { id: userId, tenantId } });
+    if (!cur) throw new Error("user");
+    return PrismaAdapter.row<UserRow>(await this.m("user").update({ where: { id: userId }, data: { active } }));
   }
   async listUsers(tenantId: string) {
     return PrismaAdapter.row<UserRow[]>(await this.m("user").findMany({ where: { tenantId }, orderBy: { createdAt: "desc" } }));

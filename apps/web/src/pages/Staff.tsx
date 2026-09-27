@@ -14,7 +14,7 @@ const ATT_KEY: Record<AttStatus, TKey> = { full: "attFull", half: "attHalf", abs
 
 const toLocalEmp = (e: ApiEmployee): Employee => ({
   id: e.id, name: e.name, role: e.role as Role, title: e.title ?? undefined,
-  half: e.halfWage ?? 0, hired: e.hiredAt.slice(0, 10),
+  half: e.halfWage ?? 0, hired: e.hiredAt.slice(0, 10), branchId: e.branchId,
 });
 const toLocalAdv = (a: { id: string; employeeId: string; amount: number; date: string; note: string | null }): Advance => ({
   id: a.id, emp: a.employeeId, amount: a.amount, date: a.date, note: a.note ?? undefined,
@@ -31,6 +31,7 @@ export default function Staff() {
   const [half, setHalf] = useState("1000");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [empBranch, setEmpBranch] = useState("");
   const [serverSalaries, setServerSalaries] = useState<Record<string, number> | null>(null);
   const [editing, setEditing] = useState<Employee | null>(null);
   const [openAdv, setOpenAdv] = useState<string | null>(null);
@@ -102,7 +103,7 @@ export default function Staff() {
     if (connected()) {
       if (phone.trim().length < 7 || password.length < 6) { toast.error(t(L, "empNeedAccount")); return; }
       try {
-        const r = await api.createEmployeeAccount({ name: name.trim(), phone: phone.trim(), password, role, title: ttl, halfWage: hw });
+        const r = await api.createEmployeeAccount({ name: name.trim(), phone: phone.trim(), password, role, title: ttl, halfWage: hw, branchId: empBranch || undefined });
         const [list, users] = await Promise.all([api.employees(), api.loginUsers().catch(() => null)]);
         update((p) => ({ ...p, employees: list.map(toLocalEmp) }));
         if (users) setAccounts(users);
@@ -111,7 +112,7 @@ export default function Staff() {
       } catch (ex) { errToast(L, ex, t(L, "errSaving")); }
       return;
     }
-    update((p) => ({ ...p, employees: [...p.employees, { id: `e${Date.now()}`, name: name.trim(), role, title: ttl, half: hw, hired: todayKey() }] }));
+    update((p) => ({ ...p, employees: [...p.employees, { id: `e${Date.now()}`, name: name.trim(), role, title: ttl, half: hw, hired: todayKey(), branchId: empBranch || undefined }] }));
     setName(""); setTitle("");
   };
 
@@ -169,6 +170,14 @@ export default function Staff() {
                   <datalist id="emp-titles">{titles.map((x) => <option key={x} value={x} />)}</datalist>
                 </Field>
               </div>
+              {isOwner && s.branches.length > 1 && (
+                <Field label={t(L, "staffBranch")} id="ebr">
+                  <select id="ebr" value={empBranch} onChange={(e) => setEmpBranch(e.target.value)} className="h-11 rounded-[10px] border border-line bg-surface px-3 text-sm font-semibold">
+                    <option value="">{t(L, "staffBranchNone")}</option>
+                    {s.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                </Field>
+              )}
               <Field label={t(L, "halfWageLb")} id="hw" hint={t(L, "halfWageHint")}>
                 <Input id="hw" inputMode="numeric" value={half} onChange={(e) => setHalf(e.target.value)} dir="ltr" />
               </Field>

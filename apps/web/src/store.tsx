@@ -9,7 +9,7 @@ export type Role = "owner" | "manager" | "cashier" | "cook";
 export interface Product {
   id: string; name: string; nameFr: string; buy: number; sell: number;
   qty: number; min: number; barcode?: string; cat: string; shelf?: string; expiry?: string; wholesale?: number; active: boolean;
-  saleable?: boolean; img?: string;
+  saleable?: boolean; img?: string; branchId?: string | null;
 }
 export interface OrderLine { productId: string; name: string; qty: number; price: number }
 export type OrderStatus = "pending" | "preparing" | "ready" | "onway" | "delivered" | "cancelled";
@@ -20,7 +20,7 @@ export interface Order {
   branchId?: string | null;
 }
 export interface Shift { id: string; by: string; openedAt: string; closedAt: string | null; opening: number; closing: number | null; note: string }
-export interface Employee { id: string; name: string; role: Role; hired: string; half: number; title?: string }
+export interface Employee { id: string; name: string; role: Role; hired: string; half: number; title?: string; branchId?: string }
 export interface Advance { id: string; emp: string; amount: number; date: string; note?: string }
 export type AttStatus = "full" | "half" | "absent";
 export interface Att { id: string; emp: string; date: string; status: AttStatus }

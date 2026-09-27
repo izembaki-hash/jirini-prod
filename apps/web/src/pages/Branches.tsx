@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { GitBranch } from "@phosphor-icons/react";
+import { GitBranch, Key, ShieldCheck } from "@phosphor-icons/react";
 import { fmtDzd, useStore, displayName, type Product } from "../store";
-import { api, currentBranch, toProduct, type ApiOrder, type ApiShift } from "../api";
-import { connected } from "../auth";
+import { api, currentBranch, toProduct, type ApiLoginUser, type ApiOrder, type ApiShift } from "../api";
+import { connected, useAuth } from "../auth";
 import { t } from "../i18n";
 import {
   Badge, Button, Card, CardContent, CardHeader, CardTitle, Empty, Field, Input,
@@ -21,13 +21,26 @@ type Period = keyof typeof DAYS;
 
 export default function Branches() {
   const { s, update } = useStore();
+  const { session } = useAuth();
   const L = s.lang;
+  const isOwner = !!session && session.role === "owner";
 
   const [period, setPeriod] = useState<Period>("7");
   const [remoteOrders, setRemoteOrders] = useState<ApiOrder[] | null>(null);
   const [shifts, setShifts] = useState<ApiShift[] | null>(null);
   // منتجات كل فرع (للحصص والنواقص) — null = لم تُجلب (لا صلاحية/لا اتصال)
   const [branchProds, setBranchProds] = useState<Record<string, Product[] | null>>({});
+
+  // حسابات الدخول (المالك فقط — 403 يعني مدراء/كاشير: يبقى null ويبخَر القسم)
+  const [users, setUsers] = useState<ApiLoginUser[] | null>(null);
+  const [accFor, setAccFor] = useState<string | null>(null);
+  const [accName, setAccName] = useState("");
+  const [accPhone, setAccPhone] = useState("");
+  const [accPass, setAccPass] = useState("");
+  const [accBusy, setAccBusy] = useState(false);
+  const [resetFor, setResetFor] = useState<string | null>(null);
+  const [resetPass, setResetPass] = useState("");
+  const [creds, setCreds] = useState<{ branch: string; phone: string; password: string } | null>(null);
 
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
@@ -59,6 +72,51 @@ export default function Branches() {
     if (!connected()) return;
     api.shiftsList().then(setShifts).catch(() => setShifts(null));
   }, []);
+
+  // حسابات الفروع (للمالك فقط — فشل أي صلاحية = إخفاء القسم)
+  useEffect(() => {
+    if (!connected() || !isOwner) return;
+    api.loginUsers().then(setUsers).catch(() => setUsers(null));
+  }, [isOwner]);
+
+  // ── حساب دخول الفرع ──
+  const createAcc = async (branchId: string, branchName: string, e: React.FormEvent) => {
+    e.preventDefault();
+    if (!connected()) { toast.error(t(L, "eConn")); return; }
+    setAccBusy(true);
+    try {
+      await api.createEmployeeAccount({
+        name: accName.trim() || branchName, phone: accPhone.trim(), password: accPass,
+        role: "manager", branchId,
+      });
+      setUsers(await api.loginUsers());
+      setCreds({ branch: branchName, phone: accPhone.trim(), password: accPass });
+      setAccFor(null); setAccName(""); setAccPhone(""); setAccPass("");
+      toast.success(t(L, "brAccCreated"));
+    } catch (ex) { errToast(L, ex); }
+    finally { setAccBusy(false); }
+  };
+
+  const resetAcc = async (userId: string, e: React.FormEvent) => {
+    e.preventDefault();
+    if (!connected()) { toast.error(t(L, "eConn")); return; }
+    setAccBusy(true);
+    try {
+      await api.userPasswordReset(userId, resetPass);
+      setResetFor(null); setResetPass("");
+      toast.success(t(L, "brAccResetOk"));
+    } catch (ex) { errToast(L, ex); }
+    finally { setAccBusy(false); }
+  };
+
+  const toggleAcc = async (userId: string, active: boolean) => {
+    if (!connected()) { toast.error(t(L, "eConn")); return; }
+    try {
+      await api.userSetActive(userId, active);
+      setUsers(await api.loginUsers());
+      toast.success(t(L, "brAccToggled"));
+    } catch (ex) { errToast(L, ex); }
+  };
 
   useEffect(() => {
     if (!connected()) return;
@@ -212,6 +270,7 @@ export default function Branches() {
           const open = shifts?.find((sh) => sh.branchId === b.id && !sh.closedAt);
           const prods = branchProds[b.id];
           const low = prods ? prods.filter((p) => p.qty <= p.min).length : null;
+          const acc = users?.find((u) => u.branchId === b.id);
           return (
             <Card key={b.id}>
               <CardHeader>
@@ -249,6 +308,69 @@ export default function Branches() {
                     ? <Badge tone="warn">{t(L, "brLowN").replace("{n}", String(low))}</Badge>
                     : <Badge tone="ok">{t(L, "brNoLow")}</Badge>)}
                 </div>
+                {/* حساب دخول مدير الفرع (المالك فقط) */}
+                {users !== null && (
+                  <div className="border-t border-line pt-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-1.5 text-xs font-semibold text-muted">
+                        <Key size={14} weight="bold" aria-hidden /> {t(L, "brAcc")}
+                      </span>
+                      {acc && (
+                        <Badge tone={acc.active ? "ok" : "warn"}>{acc.active ? t(L, "brAccOn") : t(L, "brAccOff")}</Badge>
+                      )}
+                    </div>
+                    {acc ? (
+                      <div className="mt-2 flex flex-col gap-2">
+                        <p className="text-sm">
+                          <span className="text-muted">{t(L, "brAccPhone")}:</span>{" "}
+                          <span className="tnum font-semibold" dir="ltr">{acc.phone}</span>
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          <Button type="button" size="sm" variant="outline"
+                            onClick={() => { setResetFor(resetFor === b.id ? null : b.id); setResetPass(""); }}>
+                            {t(L, "brAccReset")}
+                          </Button>
+                          <Button type="button" size="sm" variant={acc.active ? "danger" : "primary"}
+                            onClick={() => toggleAcc(acc.id, !acc.active)}>
+                            {acc.active ? t(L, "brAccDisable") : t(L, "brAccEnable")}
+                          </Button>
+                        </div>
+                        {resetFor === b.id && (
+                          <form className="flex flex-col gap-2" onSubmit={(e) => resetAcc(acc.id, e)}>
+                            <Field label={t(L, "brAccNewPass")} id={`rp-${b.id}`}>
+                              <Input id={`rp-${b.id}`} type="text" value={resetPass}
+                                onChange={(e) => setResetPass(e.target.value)} autoComplete="new-password" dir="ltr" />
+                            </Field>
+                            <Button type="submit" size="sm" disabled={resetPass.length < 6 || accBusy}>{t(L, "save")}</Button>
+                          </form>
+                        )}
+                      </div>
+                    ) : accFor !== b.id ? (
+                      <Button type="button" size="sm" variant="outline" className="mt-2"
+                        onClick={() => { setAccFor(b.id); setAccName(b.name); setAccPhone(""); setAccPass(""); }}>
+                        {t(L, "brAccCreate")}
+                      </Button>
+                    ) : (
+                      <form className="mt-2 flex flex-col gap-2" onSubmit={(e) => createAcc(b.id, b.name, e)}>
+                        <Field label={t(L, "brAccName")} id={`an-${b.id}`}>
+                          <Input id={`an-${b.id}`} value={accName} onChange={(e) => setAccName(e.target.value)} />
+                        </Field>
+                        <Field label={t(L, "brAccPhone")} id={`ap-${b.id}`}>
+                          <Input id={`ap-${b.id}`} inputMode="tel" value={accPhone}
+                            onChange={(e) => setAccPhone(e.target.value)} dir="ltr" autoComplete="off" />
+                        </Field>
+                        <Field label={t(L, "brAccPass")} id={`aw-${b.id}`} hint={t(L, "brAccPassHint")}>
+                          <Input id={`aw-${b.id}`} type="text" value={accPass}
+                            onChange={(e) => setAccPass(e.target.value)} dir="ltr" autoComplete="new-password" />
+                        </Field>
+                        <div className="flex gap-2">
+                          <Button type="submit" size="sm" disabled={accBusy || accPhone.trim().length < 9 || accPass.length < 6}>{t(L, "add")}</Button>
+                          <Button type="button" size="sm" variant="ghost" onClick={() => setAccFor(null)}>{t(L, "cancel")}</Button>
+                        </div>
+                      </form>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           );
@@ -334,6 +456,34 @@ export default function Branches() {
           </CardContent>
         </Card>
       </div>
+
+      {/* بيانات الدخول بعد الإنشاء — تظهر مرة واحدة ثم تُغلق */}
+      {creds && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label={t(L, "brAccCredsT")}>
+          <Card className="w-full max-w-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ShieldCheck size={18} weight="bold" aria-hidden />{t(L, "brAccCredsT")}
+              </CardTitle>
+              <p className="text-xs text-muted">{t(L, "brAccCredsH")}</p>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2 text-sm">
+              <div className="flex justify-between gap-2"><span className="text-muted">{t(L, "brAccBranch")}</span><b>{creds.branch}</b></div>
+              <div className="flex justify-between gap-2"><span className="text-muted">{t(L, "lSlug")}</span><b className="tnum" dir="ltr">{session?.tenant.slug ?? ""}</b></div>
+              <div className="flex justify-between gap-2"><span className="text-muted">{t(L, "brAccPhone")}</span><b className="tnum" dir="ltr">{creds.phone}</b></div>
+              <div className="flex justify-between gap-2"><span className="text-muted">{t(L, "brAccPass")}</span><b className="tnum" dir="ltr">{creds.password}</b></div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" onClick={() => {
+                  const line = `${session?.tenant.slug ?? ""} · ${creds.phone} · ${creds.password}`;
+                  navigator.clipboard?.writeText(line).catch(() => null);
+                  toast.success(t(L, "copied"));
+                }}>{t(L, "brAccCopy")}</Button>
+                <Button size="sm" onClick={() => setCreds(null)}>{t(L, "done")}</Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

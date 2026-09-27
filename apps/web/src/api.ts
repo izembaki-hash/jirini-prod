@@ -53,7 +53,7 @@ export interface LoginResp {
   tenant: { id: string; slug: string; name: string; type: string; plan: string; lang: string };
 }
 
-export interface ApiLoginUser { id: string; employeeId: string | null; name: string; role: string; hasPin: boolean; pages: string[] | null; active: boolean }
+export interface ApiLoginUser { id: string; employeeId: string | null; name: string; role: string; phone?: string; branchId?: string | null; hasPin: boolean; pages: string[] | null; active: boolean }
 
 export const APP_PAGES = [
   "pos", "shifts", "inventory", "kitchen", "orders", "customers",
@@ -64,7 +64,7 @@ export interface ApiProduct {
   id: string; name: string; nameFr: string | null; buyPrice: number; sellPrice: number;
   qty: number; minQty: number; barcode: string | null; category: string | null; active: boolean;
   saleable?: boolean | null; shelf?: string | null; expiryDate?: string | null; wholesalePrice?: number | null;
-  imageUrl?: string | null;
+  imageUrl?: string | null; branchId?: string | null;
 }
 
 export interface ApiRecipeItem { id: string; dishId: string; ingredientId: string; qty: number }
@@ -99,6 +99,10 @@ export const api = {
   userPinCreate: (id: string) => req<{ pin: string }>(`/auth/users/${id}/pin`, { method: "POST" }),
   userPagesUpdate: (id: string, pages: string[] | null) =>
     req<{ id: string; pages: string[] | null }>(`/auth/users/${id}/pages`, { method: "PATCH", body: JSON.stringify({ pages }) }),
+  userPasswordReset: (id: string, password: string) =>
+    req<{ ok: boolean }>(`/auth/users/${id}/password`, { method: "POST", body: JSON.stringify({ password }) }),
+  userSetActive: (id: string, active: boolean) =>
+    req<{ id: string; active: boolean }>(`/auth/users/${id}`, { method: "PATCH", body: JSON.stringify({ active }) }),
   me: () => req<{ auth: { role: string; name: string; tenant_id: string }; tenant: Record<string, unknown> }>("/auth/me"),
   changePassword: (current: string, next: string) =>
     req<{ ok: boolean }>("/auth/change-password", { method: "POST", body: JSON.stringify({ current, next }) }),
@@ -116,8 +120,8 @@ export const api = {
     req<ApiProduct>(`/products/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   adjustStock: (id: string, delta: number, reason: string) =>
     req<ApiProduct>(`/products/${id}/stock`, { method: "POST", body: JSON.stringify({ delta, reason }) }),
-  summary: (days = 7) =>
-    req<{ sales: number; profit: number; invoices: number; avgBasket: number; todaySales: number; todayProfit: number; todayNet?: number; breakdown?: ProfitBd; methodSplit?: { cash: number; card: number }; todayBreakdown?: ProfitBd; perDay: { date: string; sales: number; profit?: number; net?: number }[]; top: { name: string; qty: number; revenue?: number; cost?: number; margin?: number }[] }>(`/reports/summary?days=${days}`),
+  summary: (days = 7, branch?: string) =>
+    req<{ sales: number; profit: number; invoices: number; avgBasket: number; todaySales: number; todayProfit: number; todayNet?: number; breakdown?: ProfitBd; methodSplit?: { cash: number; card: number }; todayBreakdown?: ProfitBd; perDay: { date: string; sales: number; profit?: number; net?: number }[]; top: { name: string; qty: number; revenue?: number; cost?: number; margin?: number }[] }>(`/reports/summary?days=${days}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`),
   listOrders: (status?: string, opts?: { branch?: string; since?: string }) => {
     const q = new URLSearchParams();
     if (status) q.set("status", status);
@@ -329,7 +333,7 @@ export const toProduct = (sp: ApiProduct): Product => ({
   id: sp.id, name: sp.name, nameFr: sp.nameFr ?? sp.name,
   buy: sp.buyPrice, sell: sp.sellPrice, qty: sp.qty, min: sp.minQty,
   barcode: sp.barcode ?? undefined, cat: sp.category ?? "عام", active: sp.active,
-  saleable: sp.saleable ?? true, img: sp.imageUrl ?? undefined,
+  saleable: sp.saleable ?? true, img: sp.imageUrl ?? undefined, branchId: sp.branchId ?? null,
 });
 
 // فرع الخادم الحالي (يُضبط بعد المزامنة) — يُستخدم في POS بدل القيمة الوهمية.

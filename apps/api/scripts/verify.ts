@@ -460,6 +460,129 @@ async function main() {
     ok("orders scoped by ?branch", r.status === 200 && Array.isArray(r.json) && (r.json as unknown[]).length === 0);
     r = await call("GET", `/orders?branch=${branch.id}`, undefined, ownerTok2);
     ok("orders carry branchId", r.status === 200 && Array.isArray(r.json) && (r.json as { branchId?: string | null }[]).some((o) => o.branchId === branch.id));
+
+    // ─── حسابات دخول الفروع: عزل المدير المربوط + ضوابط المالك ───
+    // قائمة الحسابات تشملك الهاتف والفرع
+    r = await call("GET", "/auth/users", undefined, ownerTok2);
+    const uList = (r.json as unknown[]) as { id: string; phone: string; role: string; branchId: string | null; employeeId: string | null; active: boolean }[];
+    const mgrUser = uList.find((u) => u.phone === "0550222333");
+    const cashU = uList.find((u) => u.phone === "0550111111");
+    const ownerU = uList.find((u) => u.role === "owner");
+    ok("users carry phone+branchId", !!mgrUser && !!cashU && mgrUser.branchId === branch.id && mgrUser.employeeId !== null && !!ownerU);
+    r = await call("GET", "/auth/users", undefined, mgrTok);
+    ok("manager cannot list users → 403", r.status === 403);
+    r = await call("POST", `/auth/users/${cashU!.id}/password`, { password: "x" }, cashTok);
+    ok("cashier cannot reset password → 403", r.status === 403);
+    // هاتف مكرر مرفوض (حتى لو الحساب معطّل)
+    r = await call("POST", "/auth/users", { name: "مكرر", phone: "0550 222 333", password: "dup1234", role: "cashier" }, ownerTok2);
+    ok("duplicate phone → 409", r.status === 409 && (r.json as { error: string }).error === "duplicate_phone");
+    // المدير لا يُنشئ مالكاً
+    r = await call("POST", "/auth/users", { name: "مزيّف", phone: "0550777777", password: "ownerx1", role: "owner" }, mgrTok);
+    ok("manager create owner-role → 403", r.status === 403);
+    // موظف في فرع 2 (لاختبار العزل)
+    r = await call("POST", "/auth/users", { name: "طبّاخ الفرع2", phone: "0550999888", password: "cook2222", role: "cook", branchId: branch2 }, ownerTok2);
+    ok("owner creates employee in branch2", r.status === 201);
+    const cook2EmpId = (r.json as { employeeId: string }).employeeId;
+    // إنشاء المدير حساباً جديداً: فرعه يُفرض بغض النظر عن branchId المرسل
+    r = await call("POST", "/auth/users", { name: "مزوّد", phone: "0550555556", password: "supp1234", role: "cook", branchId: branch2 }, mgrTok);
+    ok("manager create → forced own branch", r.status === 201);
+    r = await call("GET", "/auth/users", undefined, ownerTok2);
+    const suppU = ((r.json as unknown[]) as { phone: string; branchId: string | null }[]).find((u) => u.phone === "0550555556");
+    ok("forced branchId sticks", !!suppU && suppU.branchId === branch.id);
+    // قائمة الفروع: المدير يرى فرعه فقط، المالك كله
+    r = await call("GET", "/branches", undefined, mgrTok);
+    const mgrBranches = r.json as { id: string }[];
+    ok("manager branches → own only", r.status === 200 && mgrBranches.length === 1 && mgrBranches[0].id === branch.id);
+    r = await call("GET", "/branches", undefined, ownerTok2);
+    ok("owner branches → all", r.status === 200 && (r.json as unknown[]).length >= 2);
+    // الموظفون: المدير يرى فرعه فقط ولا يمسّ موظف فرع 2
+    r = await call("GET", "/employees", undefined, mgrTok);
+    const mgrEmps = r.json as { id: string; branchId: string }[];
+    ok("manager employees → own branch only", mgrEmps.length > 0 && mgrEmps.every((e) => e.branchId === branch.id));
+    r = await call("PATCH", `/employees/${cook2EmpId}`, { title: "مسخّب" }, mgrTok);
+    ok("manager patch other-branch employee → 404", r.status === 404);
+    r = await call("DELETE", `/employees/${cook2EmpId}`, undefined, mgrTok);
+    ok("manager delete other-branch employee → 404", r.status === 404);
+    r = await call("PATCH", `/employees/${cook2EmpId}`, { title: "أجنبي" }, owner2);
+    ok("foreign-tenant employee patch → 404", r.status === 404);
+    r = await call("PATCH", `/employees/${mgrEmps[0].id}`, { halfWage: 1400 }, mgrTok);
+    ok("manager patch own employee ok", r.status === 200);
+    // الحضور والرواتب والسلف مفلترة بفرع المدير
+    r = await call("POST", "/attendance/mark", { employeeId: cook2EmpId, status: "full" }, ownerTok2);
+    ok("owner marks branch2 attendance", r.status === 201);
+    r = await call("POST", "/attendance/mark", { employeeId: cook2EmpId, status: "full" }, mgrTok);
+    ok("manager mark branch2 attendance → 404", r.status === 404);
+    r = await call("GET", "/attendance", undefined, mgrTok);
+    ok("manager attendance filtered", r.status === 200 && (r.json as { employeeId: string }[]).every((a) => a.employeeId !== cook2EmpId));
+    r = await call("GET", "/attendance", undefined, ownerTok2);
+    ok("owner sees branch2 attendance", r.status === 200 && (r.json as { employeeId: string }[]).some((a) => a.employeeId === cook2EmpId));
+    r = await call("GET", "/salaries", undefined, mgrTok);
+    ok("manager salaries filtered", r.status === 200 && (r.json as { employee: { id: string } }[]).every((s) => s.employee.id !== cook2EmpId));
+    r = await call("POST", "/salary-advances", { employeeId: cook2EmpId, amount: 500 }, mgrTok);
+    ok("manager advance branch2 → 404", r.status === 404);
+    r = await call("POST", "/salary-advances", { employeeId: cook2EmpId, amount: 500 }, ownerTok2);
+    const advId = (r.json as { id: string }).id;
+    ok("owner advance branch2 → 201", r.status === 201);
+    r = await call("GET", "/salary-advances", undefined, mgrTok);
+    ok("manager advances filtered", r.status === 200 && (r.json as { employeeId: string }[]).every((a) => a.employeeId !== cook2EmpId));
+    r = await call("DELETE", `/salary-advances/${advId}`, undefined, mgrTok);
+    ok("manager delete branch2 advance → 404", r.status === 404);
+    r = await call("DELETE", `/salary-advances/${advId}`, undefined, ownerTok2);
+    ok("owner delete own advance → 200", r.status === 200);
+    // الورديات: المدير يرى ورديات فرعه فقط
+    r = await call("POST", "/shifts/open", { branchId: branch2, openingCash: 0, cashierId: cashU!.employeeId! }, ownerTok2);
+    const sh2 = (r.json as { id: string }).id;
+    ok("owner opens branch2 shift", r.status === 201);
+    r = await call("GET", "/shifts", undefined, mgrTok);
+    ok("manager shifts filtered", r.status === 200 && (r.json as { branchId: string }[]).every((s) => s.branchId !== branch2));
+    r = await call("GET", "/shifts", undefined, ownerTok2);
+    ok("owner sees branch2 shift", r.status === 200 && (r.json as { id: string }[]).some((s) => s.id === sh2));
+    r = await call("POST", `/shifts/${sh2}/close`, { closingCash: 0 }, ownerTok2);
+    ok("close branch2 shift", r.status === 200);
+    // النقل بين الفروع: من فرع المدير فقط
+    r = await call("POST", "/branches/transfer", { productId: p1.id, fromBranchId: branch2, toBranchId: branch.id, qty: 1 }, mgrTok);
+    ok("manager transfer from foreign → 403", r.status === 403 && (r.json as { error: string }).error === "branch_forbidden");
+    r = await call("POST", "/branches/transfer", { productId: p1.id, fromBranchId: branch.id, toBranchId: branch2, qty: 1 }, mgrTok);
+    const trOwn = (r.json as { to?: { id: string } });
+    ok("manager transfer own → 200", r.status === 200 && !!trOwn.to?.id);
+    r = await call("POST", "/branches/transfer", { productId: trOwn.to?.id ?? "", fromBranchId: branch2, toBranchId: branch.id, qty: 1 }, ownerTok2);
+    ok("owner restores transfer → 200", r.status === 200);
+    // التقارير: نطاق المالك ?branch= وقيود المدير
+    r = await call("GET", "/reports/summary?days=7", undefined, ownerTok2);
+    const sumAll = r.json as { sales: number };
+    r = await call("GET", `/reports/summary?days=7&branch=${branch2}`, undefined, ownerTok2);
+    ok("owner report branch2 sales=0", r.status === 200 && (r.json as { sales: number }).sales === 0 && sumAll.sales > 0);
+    r = await call("GET", "/reports/summary?days=7&branch=fake-branch", undefined, ownerTok2);
+    ok("owner report fake branch → 404", r.status === 404);
+    r = await call("GET", `/reports/summary?days=7&branch=${branch2}`, undefined, mgrTok);
+    ok("manager report other branch → 403", r.status === 403);
+    r = await call("GET", `/reports/summary?days=7&branch=${branch.id}`, undefined, mgrTok);
+    ok("manager report own branch → 200", r.status === 200);
+    // إعادة تعيين كلمة السر: تمنع الدخول القديم وتسمح بالجديد
+    r = await call("POST", `/auth/users/${mgrUser!.id}/password`, { password: "reset1234" }, ownerTok2);
+    ok("owner resets manager password → 200", r.status === 200);
+    r = await call("POST", "/auth/login", { slug: "demo-resto", phone: "0550222333", password: "manager1" });
+    ok("old manager password rejected", r.status === 401);
+    r = await call("POST", "/auth/login", { slug: "demo-resto", phone: "0550222333", password: "reset1234" });
+    const mgrTok2 = r.json.token as string;
+    ok("reset manager password works", r.status === 200 && typeof mgrTok2 === "string");
+    r = await call("POST", `/auth/users/${ownerU!.id}/password`, { password: "ownerOwn1" }, ownerTok2);
+    ok("reset owner account → 404", r.status === 404);
+    // التعطيل يمنع الدخول والتفعيل يعيده
+    r = await call("PATCH", `/auth/users/${mgrUser!.id}`, { active: false }, ownerTok2);
+    ok("deactivate manager → 200", r.status === 200);
+    r = await call("POST", "/auth/login", { slug: "demo-resto", phone: "0550222333", password: "reset1234" });
+    ok("deactivated login blocked → 401", r.status === 401);
+    r = await call("POST", "/auth/users", { name: "مكرر2", phone: "0550222333", password: "dup1234", role: "cashier" }, ownerTok2);
+    ok("duplicate phone while inactive → 409", r.status === 409);
+    r = await call("PATCH", `/auth/users/${mgrUser!.id}`, { active: true }, ownerTok2);
+    ok("reactivate manager → 200", r.status === 200);
+    r = await call("POST", "/auth/login", { slug: "demo-resto", phone: "0550222333", password: "reset1234" });
+    ok("reactivated login ok", r.status === 200);
+    r = await call("PATCH", `/auth/users/${cashU!.id}`, { active: false }, mgrTok2);
+    ok("manager deactivate → 403", r.status === 403);
+    r = await call("PATCH", "/auth/users/whatever", { active: true }, cashTok);
+    ok("cashier deactivate → 403", r.status === 403);
   } else ok("2nd branch for isolation test", false);
 
   // â”€â”€â”€ Ù„ÙˆØ­Ø© Ø§Ù„Ù…Ø´ØºÙ‘Ù„ â”€â”€â”€

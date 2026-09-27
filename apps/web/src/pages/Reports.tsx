@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { fmtDzd, profitOf, useStore, displayName, dailySlice, laborFor, attSummary } from "../store";
+import { useAuth } from "../auth";
 import { t } from "../i18n";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Segmented, Stat } from "../ui";
 import { ReportDoc, printDoc, shopOf } from "../print";
@@ -8,13 +9,21 @@ import { Bars } from "../components/Charts";
 // 8. التقارير: مبيعات/أرباح/منتج/موظف/فرع/حضور + حساب P&L + تصدير (طباعة/PDF وCSV).
 export default function Reports() {
   const { s } = useStore();
+  const { session } = useAuth();
   const L = s.lang;
   const [range, setRange] = useState<7 | 30>(7);
+  // المالك وحده يصفّي التقارير بفرع (المدير مقيّد بفرعه من الخادم أصلاً)
+  const isOwner = !!session && session.role === "owner";
+  const showBranchFilter = isOwner && s.branches.length > 1;
+  const [repBranch, setRepBranch] = useState("");
+  const scopeB = showBranchFilter ? repBranch : "";
+  const scopedOrders = scopeB ? s.orders.filter((o) => (o.branchId ?? null) === scopeB) : s.orders;
+  const scopedEmps = scopeB ? s.employees.filter((e) => e.branchId === scopeB) : s.employees;
   const days = Array.from({ length: range }, (_, i) => {
     const d = new Date(Date.now() - (range - 1 - i) * 86_400_000);
     return { key: d.toISOString().slice(0, 10), label: d.toLocaleDateString("fr-DZ", { day: "numeric", month: "numeric" }) };
   });
-  const inRange = s.orders.filter((o) => days.some((d) => d.key === o.at.slice(0, 10)));
+  const inRange = scopedOrders.filter((o) => days.some((d) => d.key === o.at.slice(0, 10)));
   const live = inRange.filter((o) => o.status !== "cancelled");
   const sales = live.reduce((x, o) => x + o.total, 0);
   const profit = profitOf(inRange, s.products);
@@ -24,7 +33,7 @@ export default function Reports() {
   const ohLines = s.overheads.filter((o) => o.active).map((o) => ({ name: o.name, amount: Math.round(dailySlice(o.monthly) * range * 100) / 100 }));
   const ohTotal = ohLines.reduce((x, o) => x + o.amount, 0);
   const attIn = s.att.filter((a) => a.date >= days[0].key);
-  const labor = s.employees.reduce((sum, e) => sum + laborFor(attIn.filter((a) => a.emp === e.id), [e]), 0);
+  const labor = scopedEmps.reduce((sum, e) => sum + laborFor(attIn.filter((a) => a.emp === e.id), [e]), 0);
   const net = Math.round(sales - discounts - cogs - ohTotal - labor);
   const perDay = days.map((d) => inRange.filter((o) => o.at.slice(0, 10) === d.key).reduce((x, o) => x + o.total, 0));
   const cashSales = live.filter((o) => o.pay === "cash").reduce((x, o) => x + o.total, 0);
@@ -82,7 +91,7 @@ export default function Reports() {
           const m = (rev[n] ?? 0) - (cost[n] ?? 0);
           return { name: pm ? displayName(pm, L) : n, qty: q, margin: `${m >= 0 ? "+" : ""}${fmtDzd(m)}` };
         }),
-        attendance: s.employees.map((e) => {
+        attendance: scopedEmps.map((e) => {
           const sm = attSummary(attIn.filter((a) => a.emp === e.id), e.id);
           return { name: e.name, full: sm.full, half: sm.half, absent: sm.absent, salary: fmtDzd(laborFor(attIn.filter((a) => a.emp === e.id), [e])) };
         }),
@@ -104,6 +113,14 @@ export default function Reports() {
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-xl font-bold">{t(L, "repTitle")}</h1>
         <span className="ms-auto flex flex-wrap items-center gap-2">
+          {showBranchFilter && (
+            <select value={repBranch} onChange={(e) => setRepBranch(e.target.value)}
+              aria-label={t(L, "repBranch")}
+              className="h-11 rounded-[10px] border border-line bg-surface px-3 text-sm font-semibold">
+              <option value="">{t(L, "repAllBranches")}</option>
+              {s.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          )}
           <Segmented label={t(L, "period")} value={String(range) as "7" | "30"}
             options={[{ value: "7", label: t(L, "d7") }, { value: "30", label: t(L, "d30") }]}
             onChange={(v) => setRange(Number(v) as 7 | 30)} />
@@ -185,7 +202,7 @@ export default function Reports() {
       <Card><CardHeader><CardTitle>{t(L, "attReport")}</CardTitle></CardHeader>
         <CardContent>
           <ul className="flex flex-col text-sm">
-            {s.employees.map((e) => {
+            {scopedEmps.map((e) => {
               const sm = attSummary(attIn.filter((a) => a.emp === e.id), e.id);
               return (
                 <li key={e.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line py-2.5 first:border-0 first:pt-0">
@@ -197,7 +214,7 @@ export default function Reports() {
                 </li>
               );
             })}
-            {s.employees.length === 0 && <li className="text-muted">{t(L, "noEmpHint")}</li>}
+            {scopedEmps.length === 0 && <li className="text-muted">{t(L, "noEmpHint")}</li>}
           </ul>
         </CardContent>
       </Card>

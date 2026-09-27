@@ -45,6 +45,8 @@ const CODE_KEY: Record<string, TKey> = {
   bad_json: "erBadJson",
   payload_too_large: "erTooLarge",
   same_branch: "erSameBranch",
+  duplicate_phone: "eDupPhone",
+  branch_forbidden: "eBranchForbidden",
 };
 
 // كيانات رسائل 404 (تُرسل مع حقل entity من الـAPI)
