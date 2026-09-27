@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { fmtDzd, profitOf, useStore, displayName, dailySlice, laborFor, attSummary } from "../store";
+import { useEffect, useState } from "react";
+import { fmtDzd, profitOf, useStore, displayName, dailySlice, laborFor, attSummary, type Order } from "../store";
+import { api, toOrder } from "../api";
 import { useAuth } from "../auth";
 import { t } from "../i18n";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Segmented, Stat } from "../ui";
@@ -17,7 +18,18 @@ export default function Reports() {
   const showBranchFilter = isOwner && s.branches.length > 1;
   const [repBranch, setRepBranch] = useState("");
   const scopeB = showBranchFilter ? repBranch : "";
-  const scopedOrders = scopeB ? s.orders.filter((o) => (o.branchId ?? null) === scopeB) : s.orders;
+  // مالك وحده: جلب الطلبات حسب الفلتر من الخادم (س orders يخص الفرع النشط فقط)
+  const [repOrders, setRepOrders] = useState<Order[] | null>(null);
+  useEffect(() => {
+    if (!showBranchFilter) return;
+    let alive = true;
+    api.listOrders(undefined, { branch: scopeB || undefined })
+      .then((list) => { if (alive) setRepOrders(list.map(toOrder)); })
+      .catch(() => null);
+    return () => { alive = false; };
+  }, [showBranchFilter, scopeB]);
+  const baseOrders = showBranchFilter && repOrders ? repOrders : s.orders;
+  const scopedOrders = scopeB ? baseOrders.filter((o) => (o.branchId ?? null) === scopeB) : baseOrders;
   const scopedEmps = scopeB ? s.employees.filter((e) => e.branchId === scopeB) : s.employees;
   const days = Array.from({ length: range }, (_, i) => {
     const d = new Date(Date.now() - (range - 1 - i) * 86_400_000);
