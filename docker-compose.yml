@@ -13,6 +13,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging: &log-rot
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   api:
     build: ./apps/api
@@ -29,15 +34,18 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:4000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))\""]
+      # الصحة الحقيقية: الـAPI يعمل وموصول على postgres — أي fallback للذاكرة = غير صحي
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:4000/health').then(r=>r.json()).then(j=>process.exit(j.ok&&j.db==='postgres'?0:1)).catch(()=>process.exit(1))\""]
       interval: 15s
       timeout: 5s
       retries: 3
       start_period: 30s
+    logging: *log-rot
 
   web:
     build:
-      context: ./apps/web
+      context: .
+      dockerfile: apps/web/Dockerfile
       args:
         VITE_API_URL: ${VITE_API_URL:-}
     restart: unless-stopped
@@ -49,6 +57,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+    logging: *log-rot
 
   caddy:
     image: caddy:2-alpine
@@ -63,6 +72,7 @@ services:
     depends_on:
       - api
       - web
+    logging: *log-rot
 
 volumes:
   pgdata:

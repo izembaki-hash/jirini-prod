@@ -1,0 +1,21 @@
+# node_modules وأنافيس
+**/node_modules
+.git
+.gitignore
+
+# مخرجات البناء (تُبنى داخل الصورة)
+**/dist
+**/.vite
+
+# بيانات حساسة/تشغيلية — لا تدخل صورة البناء أبداً
+.env
+.env.*
+!.env.example
+backups
+uploads
+*.log
+
+# ملفات التطوير
+.vscode
+.idea
+**/*.tsbuildinfo
