@@ -30,6 +30,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx prisma validate --schema apps/api/prisma/schema.prisma
+      - run: npx prisma generate --schema apps/api/prisma/schema.prisma
       - run: npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
       - run: npm run verify --workspace apps/api
       - run: DATABASE_URL=$DATABASE_URL npm run verify:pg --workspace apps/api
