@@ -26,7 +26,6 @@ npm run dev
 ## البنية: إطلاق مفتوح دائماً (Firebase أو VPS)
 
 ```
-packages/shared   → العقد والأنواع والحسابات الخالصة (ربح/رواتب/ادخار/خطط)
 apps/web          → React + TS + Tailwind v4 + shadcn-style (PWA)
 apps/api          → Node + Express + DbPort (نفس الواجهة للقاعدتين)
   ├─ MemoryAdapter  (الحالي: يعمل بدون قاعدة)
