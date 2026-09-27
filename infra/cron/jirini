@@ -1,0 +1,3 @@
+# jirini — daily backup + watchdog (managed by ops)
+15 3 * * * root /opt/jirini/scripts/db-backup.sh >> /var/log/jirini-backup.log 2>&1
+*/5 * * * * root /opt/jirini/scripts/jirini-watchdog.sh
