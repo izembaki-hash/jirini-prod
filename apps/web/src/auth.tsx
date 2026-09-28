@@ -1,9 +1,10 @@
 import React, { createContext, useContext, useState } from "react";
-import { API_BASE, api, setToken as saveToken, getToken } from "./api";
+import { API_BASE, api, setToken as saveToken, setBranch as saveBranch, getToken } from "./api";
 
 export interface Session {
   name: string;
   role: string;
+  branchId: string | null;
   pages: string[] | null;
   tenant: { id: string; slug: string; name: string; type: string; plan: string; lang: string };
 }
@@ -37,9 +38,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch { return null; }
   });
 
-  const save = (r: { token: string; user: { name: string; role: string; pages: string[] | null }; tenant: Session["tenant"] }) => {
+  const save = (r: { token: string; user: { name: string; role: string; branchId?: string | null; pages: string[] | null }; tenant: Session["tenant"] }) => {
     saveToken(r.token);
-    const s = { name: r.user.name, role: r.user.role, pages: r.user.pages, tenant: r.tenant };
+    const branchId = r.user.branchId ?? null;
+    // حساب مثبّت على فرع → الفرع النشط يصبح فرعه فوراً (يمنع التسرّب من فرع أجنبي محفوظ)
+    if (branchId) saveBranch(branchId);
+    const s = { name: r.user.name, role: r.user.role, branchId, pages: r.user.pages, tenant: r.tenant };
     try { localStorage.setItem("dz-session", JSON.stringify(s)); } catch { /* تجاهل */ }
     setSession(s);
   };

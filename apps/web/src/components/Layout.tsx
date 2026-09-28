@@ -92,9 +92,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const activeBranchId =
     s.branches.find((b) => b.name === s.branch)?.id ?? currentBranch() ?? s.branches[0]?.id ?? "";
 
+  // حساب مثبّت على فرع (مدير/كاشير/طباخ) → بلا مبدّل ولا تبديل لفرع أجنبي
+  const pinnedBranch = session?.branchId ?? null;
+
   // مبدّل الفروع: يغيّر الفرع النشط (POS/المخزون/الورديات تستخدمه في الإنشاء)
   // ويعيد جلب الكتالوج والطلبات المخصّصة لهذا الفرع.
   const switchBranch = (id: string) => {
+    if (pinnedBranch && id !== pinnedBranch) return;
     const b = s.branches.find((x) => x.id === id);
     if (!b || id === activeBranchId) return;
     setBranch(id);
@@ -123,9 +127,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
       try {
         const { tenant, branches } = await api.tenantInfo();
         if (!tenant) { logout(); nav("/login"); return; }
-        const keep = persistedBranch(branches);
+        // الفعل (PIN) مُلزِم: تجاهل أي فرع محفوظ ليس فرع هذا الحساب
+        const forced = pinnedBranch && branches.some((b) => b.id === pinnedBranch) ? pinnedBranch : null;
+        const keep = forced ?? persistedBranch(branches);
         setBranch(keep ?? branches[0]?.id ?? null);
-        const products = await api.listProducts(keep ?? undefined);
+        const products = await api.listProducts(keep ?? undefined)
+          .catch(() => api.listProducts(undefined).catch(() => null));
         update((p) => ({
           ...p,
           businessName: tenant.name || p.businessName,
@@ -139,7 +146,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           tables: typeof (tenant as { tablesCount?: unknown }).tablesCount === "number"
             ? Math.min(60, Math.max(1, (tenant as { tablesCount: number }).tablesCount))
             : p.tables,
-          products: products.map(toProduct),
+          products: products ? products.map(toProduct) : p.products,
         }));
         // المصاريف الثابتة: فشلها لا يكسر المزامنة (الكاشير مثلاً بلا صلاحية)
         api.listOverheads().then((list) => update((p) => ({
@@ -185,7 +192,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </NavLink>
         ))}
         <div className="mt-auto flex flex-col gap-2 border-t border-line pt-3">
-          {s.branches.length > 1 && (
+          {!pinnedBranch && s.branches.length > 1 && (
             <div className="flex items-center gap-2">
               <GitBranch size={16} weight="bold" aria-hidden className="shrink-0 text-muted" />
               <label className="sr-only" htmlFor="branch-switch-d">{t(L, "brSwitch")}</label>
@@ -218,7 +225,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <span className="hidden max-w-[40vw] truncate text-sm font-bold sm:inline">{s.businessName}</span>
           </button>
           <div className="ms-auto flex items-center gap-2">
-            {s.branches.length > 1 && (
+            {!pinnedBranch && s.branches.length > 1 && (
               <>
                 <label className="sr-only" htmlFor="branch-switch-h">{t(L, "brSwitch")}</label>
                 <select id="branch-switch-h" value={activeBranchId} onChange={(e) => switchBranch(e.target.value)}
