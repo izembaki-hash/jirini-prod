@@ -12,7 +12,7 @@ const CARDS = [
     subFr: "Tables, cuisine live, QR, livraison",
     feats: ["QR لكل طاولة يطبع ويُلصق", "شاشة مطبخ تستقبل فوراً", "منيو رقمي يخفي النافد تلقائياً"],
     featsFr: ["QR imprimable par table", "Écran cuisine instantané", "Menu qui masque les ruptures"],
-    img: "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?q=80&w=1200&auto=format&fit=crop",
+    img: "/img/activity-restaurant.jpg",
   },
   {
     type: "shop" as const, title: "محل", fr: "Boutique",
@@ -20,7 +20,7 @@ const CARDS = [
     subFr: "Supérette, épicerie, caisse code-barres",
     feats: ["بحث يدوي كامل — القارئ اختياري", "تنبيه الصلاحية والرفوف", "أسعار جملة وتجزئة"],
     featsFr: ["Recherche manuelle complète", "Alertes péremption et rayons", "Prix gros et détail"],
-    img: "https://images.unsplash.com/photo-1542838132-92c53300491e?q=80&w=1200&auto=format&fit=crop",
+    img: "/img/activity-shop.jpg",
   },
 ];
 
