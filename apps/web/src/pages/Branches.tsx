@@ -14,7 +14,7 @@ import { Bars } from "../components/Charts";
 import { errToast } from "../lib/err";
 
 // الفروع: مؤشرات حقيقية لكل فرع (branchId) + مبدّل + نقل مخزون فعلي عبر الخادم.
-const LIMIT: Record<string, number> = { starter: 1, pro: 2, mega: 99 };
+const LIMIT: Record<string, number> = { starter: 1, pro: 2, mega: 5 };
 const DAYS = { "7": 7, "30": 30 } as const;
 
 type Period = keyof typeof DAYS;
@@ -430,7 +430,8 @@ export default function Branches() {
           </CardContent>
         </Card>
 
-        {/* إضافة فرع داخل حد الخطة */}
+        {/* إضافة فرع داخل حد الخطة — المالك فقط (الخادم يرفض غير المالك) */}
+        {isOwner && (
         <Card>
           <CardHeader>
             <CardTitle>{t(L, "newBranch")}</CardTitle>
@@ -447,6 +448,8 @@ export default function Branches() {
                 </Field>
                 <Button type="submit" disabled={!name.trim()} className="self-start">{t(L, "add")}</Button>
               </form>
+            ) : s.plan === "mega" ? (
+              <p className="text-sm text-muted">{t(L, "brMax")}</p>
             ) : (
               <div className="flex flex-col items-start gap-3">
                 <p className="text-sm text-muted">{t(L, "brUpgradeH")}</p>
@@ -455,6 +458,7 @@ export default function Branches() {
             )}
           </CardContent>
         </Card>
+        )}
       </div>
 
       {/* بيانات الدخول بعد الإنشاء — تظهر مرة واحدة ثم تُغلق */}

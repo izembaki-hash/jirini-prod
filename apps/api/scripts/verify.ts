@@ -460,6 +460,13 @@ async function main() {
     ok("orders scoped by ?branch", r.status === 200 && Array.isArray(r.json) && (r.json as unknown[]).length === 0);
     r = await call("GET", `/orders?branch=${branch.id}`, undefined, ownerTok2);
     ok("orders carry branchId", r.status === 200 && Array.isArray(r.json) && (r.json as { branchId?: string | null }[]).some((o) => o.branchId === branch.id));
+    // مدير مربوط: ?branch= لا يفتح فرعاً آخر (عزل حقيقي)
+    r = await call("GET", `/products?branch=${branch2}`, undefined, mgrTok);
+    ok("manager ?branch other products → 403", r.status === 403 && (r.json as { error: string }).error === "branch_forbidden");
+    r = await call("GET", `/orders?branch=${branch2}`, undefined, mgrTok);
+    ok("manager ?branch other orders → 403", r.status === 403 && (r.json as { error: string }).error === "branch_forbidden");
+    r = await call("GET", `/orders?branch=${branch.id}`, undefined, mgrTok);
+    ok("manager ?branch own orders → 200", r.status === 200 && Array.isArray(r.json));
 
     // ─── حسابات دخول الفروع: عزل المدير المربوط + ضوابط المالك ───
     // قائمة الحسابات تشملك الهاتف والفرع

@@ -537,8 +537,12 @@ export async function buildApp(db?: DbPort) {
   app.get("/products", requireAuth, requirePage("pos", "inventory", "kitchen", "orders"), async (req, res, next) => {
     try {
       const qb = (req.query.branch as string) || undefined;
-      if (qb) await assertBranch(dbx, req.auth!.tenant_id, qb);
-      res.json(await dbx.listProducts(req.auth!.tenant_id, qb || branchOf(req)));
+      const pin = branchOf(req);
+      if (qb) {
+        await assertBranch(dbx, req.auth!.tenant_id, qb);
+        if (pin && qb !== pin) { res.status(403).json({ error: "branch_forbidden" }); return; }
+      }
+      res.json(await dbx.listProducts(req.auth!.tenant_id, qb || pin));
     } catch (e) { next(e); }
   });
 
@@ -654,10 +658,14 @@ export async function buildApp(db?: DbPort) {
   app.get("/orders", requireAuth, requirePage("orders", "kitchen"), async (req, res, next) => {
     try {
       const qb = (req.query.branch as string) || undefined;
-      if (qb) await assertBranch(dbx, req.auth!.tenant_id, qb);
+      const pinO = branchOf(req);
+      if (qb) {
+        await assertBranch(dbx, req.auth!.tenant_id, qb);
+        if (pinO && qb !== pinO) { res.status(403).json({ error: "branch_forbidden" }); return; }
+      }
       const list = await dbx.listOrders(req.auth!.tenant_id, {
         status: (req.query.status as string) || undefined,
-        branchId: qb || branchOf(req),
+        branchId: qb || pinO,
         since: (req.query.since as string) || undefined,
       });
       res.json(await richAll(dbx, req.auth!.tenant_id, list));

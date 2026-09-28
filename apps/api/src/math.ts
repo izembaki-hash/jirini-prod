@@ -77,5 +77,5 @@ export const dailySlice = (monthly: number) => Math.round((monthly / 30) * 100) 
 export const PLAN_LIMITS: Record<string, { branches: number; online: boolean; growth: boolean }> = {
   starter: { branches: 1, online: false, growth: false },
   pro: { branches: 2, online: true, growth: true },
-  mega: { branches: 99, online: true, growth: true },
+  mega: { branches: 5, online: true, growth: true },
 };
