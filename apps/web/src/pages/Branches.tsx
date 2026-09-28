@@ -27,6 +27,8 @@ export default function Branches() {
   // الخادم: النقل للمالك والمدير فقط (الكاشير يُرفض 403)
   const canTransfer = isOwner || session?.role === "manager";
   const pinnedB = session?.branchId ?? null;
+  // حساب مثبّت: الطلبات محجوبة لبقية الفروع → العرض الإحصائي يقتصر على فرعه بدل أصفار مضلِّلة
+  const statBranches = pinnedB ? s.branches.filter((b) => b.id === pinnedB) : s.branches;
 
   const [period, setPeriod] = useState<Period>("7");
   const [remoteOrders, setRemoteOrders] = useState<ApiOrder[] | null>(null);
@@ -143,14 +145,14 @@ export default function Branches() {
       ? remoteOrders.map((o) => ({ at: o.createdAt, status: o.status, total: o.total, branchId: o.branchId ?? null }))
       : s.orders.map((o) => ({ at: o.at, status: o.status, total: o.total, branchId: o.branchId ?? null }));
     const rows = list.filter((o) => o.status !== "cancelled" && o.at >= since);
-    const per = s.branches.map((b) => {
+    const per = statBranches.map((b) => {
       const mine = rows.filter((o) => o.branchId === b.id);
       const sales = mine.reduce((x, o) => x + o.total, 0);
       return { ...b, sales, count: mine.length, avg: mine.length ? Math.round(sales / mine.length) : 0 };
     });
     const total = per.reduce((x, b) => x + b.sales, 0);
     return per.map((b) => ({ ...b, share: total > 0 ? (b.sales / total) * 100 : 0 }));
-  }, [remoteOrders, s.orders, s.branches, since]);
+  }, [remoteOrders, s.orders, statBranches, since]);
 
   const ZERO = { sales: 0, count: 0, avg: 0, share: 0 };
   // ترتيب الأعمدة حسب اتجاه اللغة (في RTL يبدأ التخطيط من اليمين)
@@ -247,8 +249,8 @@ export default function Branches() {
           options={[{ value: "7", label: t(L, "brP7") }, { value: "30", label: t(L, "brP30") }]} />
       </div>
 
-      {/* مقارنة بصرية عند أكثر من فرع */}
-      {multi && (
+      {/* مقارنة بصرية عند أكثر من فرع — للمالك فقط (للمثبَّت يقتصر على فرعه) */}
+      {!pinnedB && multi && (
         <Card>
           <CardHeader><CardTitle>{t(L, "brBranchSales")}</CardTitle></CardHeader>
           <CardContent>
@@ -271,7 +273,7 @@ export default function Branches() {
 
       {/* بطاقات الفروع: مؤشرات حقيقية من branchId */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {s.branches.map((b) => {
+        {statBranches.map((b) => {
           const st = stats.find((x) => x.id === b.id) ?? ZERO;
           const open = shifts?.find((sh) => sh.branchId === b.id && !sh.closedAt);
           const prods = branchProds[b.id];

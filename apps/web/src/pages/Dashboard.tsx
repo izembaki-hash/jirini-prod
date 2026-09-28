@@ -233,11 +233,12 @@ export default function Dashboard() {
 
         <Card className="rise-in" style={{ animationDelay: "120ms" }}><CardHeader><CardTitle>{t(L, "branchesN")}</CardTitle></CardHeader>
           <CardContent>
-            {s.branches.length < 2 ? (
+            {/* حساب مثبّت: طلبات الخادم محجوبة لبقية الفروع → سطر فرعه فقط بدل أصفار مضلِّلة */}
+            {s.branches.length < 2 && !session?.branchId ? (
               <p className="text-sm text-muted">{t(L, "oneBranch")} ({s.branch}). {t(L, "brCompare")}</p>
             ) : (
               <ul className="flex flex-col gap-2 text-sm">
-                {s.branches.map((b) => <li key={b.id} className="flex justify-between border-t border-line pt-2 first:border-0 first:pt-0"><span className="truncate">{b.name}</span><span className="tnum font-bold">{fmtDzd(byBranch.get(b.id) ?? 0)}</span></li>)}
+                {(session?.branchId ? s.branches.filter((b) => b.id === session.branchId) : s.branches).map((b) => <li key={b.id} className="flex justify-between border-t border-line pt-2 first:border-0 first:pt-0"><span className="truncate">{b.name}</span><span className="tnum font-bold">{fmtDzd(byBranch.get(b.id) ?? 0)}</span></li>)}
               </ul>
             )}
           </CardContent>
