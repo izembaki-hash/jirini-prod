@@ -24,6 +24,9 @@ export default function Branches() {
   const { session } = useAuth();
   const L = s.lang;
   const isOwner = !!session && session.role === "owner";
+  // الخادم: النقل للمالك والمدير فقط (الكاشير يُرفض 403)
+  const canTransfer = isOwner || session?.role === "manager";
+  const pinnedB = session?.branchId ?? null;
 
   const [period, setPeriod] = useState<Period>("7");
   const [remoteOrders, setRemoteOrders] = useState<ApiOrder[] | null>(null);
@@ -44,7 +47,7 @@ export default function Branches() {
 
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
-  const [tFrom, setTFrom] = useState("");
+  const [tFrom, setTFrom] = useState(pinnedB ?? "");
   const [tTo, setTTo] = useState("");
   const [tPid, setTPid] = useState("");
   const [tQty, setTQty] = useState("5");
@@ -55,6 +58,9 @@ export default function Branches() {
   // ── جلب البيانات ──
   useEffect(() => {
     if (!connected()) return;
+    // حساب مثبّت على فرع: GET /branches محجوب لغير فرعه — تبقى لائحة الجلسة
+    // (/tenant كاملة) حتى تظهر وجهات النقل والعدّاد صحيحاً
+    if (session?.branchId) return;
     api.branchesList().then((list) => update((p) => ({
       ...p,
       branches: list,
@@ -379,6 +385,7 @@ export default function Branches() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* نقل مخزون حقيقي بين الفروع */}
+        {canTransfer && (
         <Card>
           <CardHeader><CardTitle>{t(L, "moveTitle")}</CardTitle></CardHeader>
           <CardContent>
@@ -389,7 +396,7 @@ export default function Branches() {
                     <select id="tfrom" value={tFrom} className="h-11 rounded-[10px] border border-line bg-surface px-3 text-sm"
                       onChange={(e) => { setTFrom(e.target.value); setTPid(""); if (tTo === e.target.value) setTTo(""); }}>
                       <option value="">{t(L, "chooseEll")}</option>
-                      {s.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                      {(pinnedB ? s.branches.filter((b) => b.id === pinnedB) : s.branches).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                     </select>
                   </Field>
                   <Field label={t(L, "brTo")} id="tto">
@@ -429,6 +436,7 @@ export default function Branches() {
             )}
           </CardContent>
         </Card>
+        )}
 
         {/* إضافة فرع داخل حد الخطة — المالك فقط (الخادم يرفض غير المالك) */}
         {isOwner && (
