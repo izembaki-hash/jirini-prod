@@ -32,27 +32,27 @@ alert() { # $1=kind $2=message
 #1) صحة الـAPI وقاعدة البيانات
 HEALTH=$(curl -fsS -m 5 http://127.0.0.1/health 2>/dev/null || true)
 if [ -z "$HEALTH" ]; then
-  alert api "API unreachable — restarting api"
+  alert api "الـ API لا يستجيب — أُعيد تشغيله الآن"
   docker compose -f /opt/jirini/docker-compose.yml restart api >> "$LOG" 2>&1 || true
 elif ! echo "$HEALTH" | grep -q '"db":"postgres"'; then
-  alert db "db not postgres ($HEALTH) — restarting api"
+  alert db "قاعدة البيانات لا تستجيب ($HEALTH) — أُعيد تشغيل الـ API"
   docker compose -f /opt/jirini/docker-compose.yml restart api >> "$LOG" 2>&1 || true
 fi
 
 #2) حالة حاوية الـAPI
 ST=$(docker inspect -f '{{.State.Health.Status}}' jirini-api-1 2>/dev/null || echo missing)
 if [ "$ST" != "healthy" ]; then
-  alert container "api container state=$ST"
+  alert container "حاوية الـ API حالتها: $ST"
 fi
 
 #3) نسخة احتياطية خلال36 ساعة
 LATEST=$(ls -t /opt/jirini/backups/db_*.dump 2>/dev/null | head -1 || true)
 if [ -z "$LATEST" ] || [ -z "$(find "$LATEST" -mmin -2160 2>/dev/null)" ]; then
-  alert backup "no database backup in last36h"
+  alert backup "لا توجد نسخة احتياطية خلال آخر 36 ساعة"
 fi
 
 #4) القرص
 USE=$(df -P / | awk 'NR==2{gsub("%","",$5); print $5}')
 if [ -n "$USE" ] && [ "$USE" -ge 85 ]; then
-  alert disk "disk usage ${USE}%"
+  alert disk "مساحة القرص بلغت ${USE}%"
 fi
