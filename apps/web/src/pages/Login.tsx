@@ -54,8 +54,6 @@ export default function Login() {
         <div className="relative flex min-h-56 flex-col justify-end gap-3 overflow-hidden p-7 text-white">
           <img src={spot} alt="" className="absolute inset-0 h-full w-full object-cover" />
           <div aria-hidden className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/30 to-black/10" />
-          <img src="/img/logo.jpg" alt={t(L, "appName")} width={96} height={96}
-            className="relative h-24 w-24 rounded-2xl bg-white object-cover shadow-lg ring-1 ring-black/10" />
           <p className="relative text-2xl font-bold leading-snug md:text-[28px]">{t(L, "tagline")}</p>
           <ul className="relative mt-1 flex flex-col gap-2 text-[13px] text-white/90">
             <li className="flex items-center gap-2"><TrendUp size={17} aria-hidden />{t(L, "brandLine1")}</li>
