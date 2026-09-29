@@ -43,9 +43,9 @@ export default function ActivitySelect() {
     <div className="mx-auto flex min-h-[100dvh] w-full max-w-[1400px] flex-col px-4 pb-10 pt-5 sm:px-6">
       {/* شريط العلامة */}
       <header className="flex items-center gap-2.5">
-        <span aria-hidden className="grid size-10 place-items-center rounded-xl bg-growth text-lg font-bold text-white">د</span>
+        <img src="/icons/icon-192.png" alt="" width={40} height={40} className="size-10 rounded-xl" />
         <span>
-          <span className="block text-sm font-bold leading-tight">جيريني</span>
+          <span className="block text-sm font-bold leading-tight">{t(L, "appName")}</span>
           <span className="block text-[11px] text-muted">{t(L, "tagline")}</span>
         </span>
         <span className="ms-auto flex items-center gap-2">
