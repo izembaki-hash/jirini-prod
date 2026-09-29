@@ -3,6 +3,7 @@ export type Lang = "ar" | "fr";
 
 const dict = {
   appName: { ar: "جيريني", fr: "Jirini" },
+  craftedBy: { ar: "تطوير", fr: "Développé par" },
   tagline: { ar: "اعرف ربحك الحقيقي بضغطة واحدة", fr: "Connaissez votre vrai bénéfice en un clic" },
   restaurant: { ar: "مطعم", fr: "Restaurant" },
   shop: { ar: "محل", fr: "Boutique" },

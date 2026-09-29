@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useEffect } from "react";
-import { ArrowLeft, CheckCircle, DeviceMobile, Wallet, Translate } from "@phosphor-icons/react";
+import { ArrowLeft, CheckCircle, DeviceMobile, Wallet, Translate, FacebookLogo, InstagramLogo, WhatsappLogo, TelegramLogo, EnvelopeSimple } from "@phosphor-icons/react";
 import { useStore } from "../store";
 import { t } from "../i18n";
 import { setCanonical, setHomeJsonLd } from "../lib/seo";
@@ -24,6 +24,15 @@ const CARDS = [
     featsFr: ["Recherche manuelle complète", "Alertes péremption et rayons", "Prix gros et détail"],
     img: "/img/activity-shop.jpg",
   },
+];
+
+// روابط المنشئ (تذييل الصفحة الأولى فقط).
+const SOCIALS = [
+  { label: "Facebook", href: "https://www.facebook.com/p/SERV-Tech-Solutions-61583768150343/", Icon: FacebookLogo },
+  { label: "Instagram", href: "https://www.instagram.com/serv_techsolutions", Icon: InstagramLogo },
+  { label: "WhatsApp", href: "https://wa.me/213784069886", Icon: WhatsappLogo },
+  { label: "Telegram", href: "https://t.me/+YhHlcrvwkSk3MDY0", Icon: TelegramLogo },
+  { label: "Email", href: "mailto:servtechsolutions17@gmail.com", Icon: EnvelopeSimple },
 ];
 
 export default function ActivitySelect() {
@@ -116,6 +125,20 @@ export default function ActivitySelect() {
         <li className="flex items-center gap-1.5"><Translate size={17} aria-hidden />{t(L, "trustLang")}</li>
         <li className="flex items-center gap-1.5"><DeviceMobile size={17} aria-hidden />{t(L, "trustMobile")}</li>
       </ul>
+
+      {/* تذييل المنشئ — الصفحة الأولى فقط */}
+      <footer className="mt-10 flex flex-col items-center gap-3 border-t border-line pt-6 text-center">
+        <img src="/img/footer-logo.jpg" alt="SERV-Tech Solutions" width={246} height={96} loading="lazy" className="h-12 w-auto rounded-lg" />
+        <p className="text-xs text-muted">{t(L, "craftedBy")} <b className="text-ink">SERV-Tech Solutions</b></p>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          {SOCIALS.map((s2) => (
+            <a key={s2.label} href={s2.href} target="_blank" rel="noreferrer" aria-label={s2.label}
+              className="btn-press grid size-11 touch-manipulation place-items-center rounded-[10px] border border-line text-muted transition-colors hover:bg-canvas hover:text-ink">
+              <s2.Icon size={20} aria-hidden />
+            </a>
+          ))}
+        </div>
+      </footer>
     </div>
   );
 }
