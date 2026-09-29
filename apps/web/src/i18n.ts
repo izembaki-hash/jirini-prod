@@ -68,11 +68,10 @@ const dict = {
   dzd: { ar: "دج", fr: "DA" },
   // الهبوط
   heroTitle: { ar: "نظام واحد يدير مطعمك أو محلّك كاملاً", fr: "Un seul système pour tout votre restaurant ou boutique" },
-  heroSub: { ar: "نقطة بيع لمسية، مخزون، عمال ورواتب، وتقارير — بالدينار وبالعربية أو الفرنسية. اختر نشاطك لترى الواجهة مضبوطة عليه.", fr: "Caisse tactile, stock, employés et rapports — en dinars, en arabe ou en français. Choisissez votre activité." },
+  heroSub: { ar: "نقطة بيع لمسية، مخزون، عمال ورواتب، وتقارير — بالعربية أو الفرنسية. اختر نشاطك لترى الواجهة مضبوطة عليه.", fr: "Caisse tactile, stock, employés et rapports — en arabe ou en français. Choisissez votre activité." },
   fromPrice: { ar: "ابتداءً من 2500 دج/شهر", fr: "Dès 2500 DA/mois" },
   startAs: { ar: "ابدأ كـ", fr: "Commencer : " },
   clientLogin: { ar: "دخول المشتركين", fr: "Espace client" },
-  trustCash: { ar: "الدينار ثابت — بلا مفاجآت صرف", fr: "Dinar fixe — sans surprise" },
   trustLang: { ar: "عربي / Français", fr: "Arabe / Français" },
   trustMobile: { ar: "يعمل على الهاتف والتابلت بلا عتاد", fr: "Mobile et tablette, sans matériel" },
   // التسجيل

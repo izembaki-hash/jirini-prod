@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useEffect } from "react";
-import { ArrowLeft, CheckCircle, DeviceMobile, Wallet, Translate, FacebookLogo, InstagramLogo, WhatsappLogo, TelegramLogo, EnvelopeSimple } from "@phosphor-icons/react";
+import { ArrowLeft, CheckCircle, DeviceMobile, Translate, FacebookLogo, InstagramLogo, WhatsappLogo, TelegramLogo, EnvelopeSimple } from "@phosphor-icons/react";
 import { useStore } from "../store";
 import { t } from "../i18n";
 import { setCanonical, setHomeJsonLd } from "../lib/seo";
@@ -121,7 +121,6 @@ export default function ActivitySelect() {
 
       {/* شريط الثقة */}
       <ul className="mt-8 flex flex-wrap gap-x-6 gap-y-2 text-[13px] text-muted">
-        <li className="flex items-center gap-1.5"><Wallet size={17} aria-hidden />{t(L, "trustCash")}</li>
         <li className="flex items-center gap-1.5"><Translate size={17} aria-hidden />{t(L, "trustLang")}</li>
         <li className="flex items-center gap-1.5"><DeviceMobile size={17} aria-hidden />{t(L, "trustMobile")}</li>
       </ul>
