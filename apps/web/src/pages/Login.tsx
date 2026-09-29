@@ -10,6 +10,9 @@ import { errMsg } from "../lib/err";
 import { setCanonical } from "../lib/seo";
 
 // الدخول للإنتاج: slug النشاط + (هاتف الموظف + كلمة السر) أو (الكود السري للعمال).
+// خلفية اللوحة: صورة عشوائية عند كل زيارة.
+const SPOTS = ["/img/food.jpg", "/img/market.jpg"];
+
 export default function Login() {
   const { login, loginPin } = useAuth();
   const { s } = useStore();
@@ -24,6 +27,9 @@ export default function Login() {
   const [pin, setPin] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // خلفية اللوحة: صورة عشوائية تُختار مرة واحدة عند فتح الصفحة.
+  const [spot] = useState(() => SPOTS[Math.floor(Math.random() * SPOTS.length)]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,10 +50,10 @@ export default function Login() {
   return (
     <div className="mx-auto grid min-h-[100dvh] w-full max-w-[1000px] place-items-center px-4 py-10">
       <div className="grid w-full grid-cols-1 overflow-hidden rounded-2xl border border-line bg-surface md:grid-cols-[1fr_1.1fr]">
-        {/* لوحة العلامة */}
-        <div className="relative flex min-h-56 flex-col justify-end gap-3 overflow-hidden bg-growth-deep p-7 text-white">
-          <div aria-hidden className="absolute -left-16 -top-16 size-56 rounded-full bg-white/10" />
-          <div aria-hidden className="absolute -bottom-20 -right-10 size-64 rounded-full bg-black/10" />
+        {/* لوحة العلامة — خلفية صورة عشوائية */}
+        <div className="relative flex min-h-56 flex-col justify-end gap-3 overflow-hidden p-7 text-white">
+          <img src={spot} alt="" className="absolute inset-0 h-full w-full object-cover" />
+          <div aria-hidden className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/30 to-black/10" />
           <img src="/img/logo.jpg" alt={t(L, "appName")} width={96} height={96}
             className="relative h-24 w-24 rounded-2xl bg-white object-cover shadow-lg ring-1 ring-black/10" />
           <p className="relative text-2xl font-bold leading-snug md:text-[28px]">{t(L, "tagline")}</p>
