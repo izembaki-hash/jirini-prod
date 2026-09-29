@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { TrendUp, CashRegister, CookingPot } from "@phosphor-icons/react";
 import { ApiError } from "../api";
@@ -7,6 +7,7 @@ import { useStore } from "../store";
 import { t } from "../i18n";
 import { Button, Card, CardContent, Field, Input, Segmented } from "../ui";
 import { errMsg } from "../lib/err";
+import { setCanonical } from "../lib/seo";
 
 // الدخول للإنتاج: slug النشاط + (هاتف الموظف + كلمة السر) أو (الكود السري للعمال).
 export default function Login() {
@@ -14,6 +15,7 @@ export default function Login() {
   const { s } = useStore();
   const L = s.lang;
   const nav = useNavigate();
+  useEffect(() => { setCanonical("/login"); }, []);
   const [q] = useSearchParams();
   const [mode, setMode] = useState<"password" | "pin">("password");
   const [slug, setSlug] = useState(q.get("slug") ?? "");

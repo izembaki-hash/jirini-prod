@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useStore } from "../store";
 import { api } from "../api";
 import { t } from "../i18n";
+import { setCanonical } from "../lib/seo";
 import { Button, Card, CardContent, CardHeader, CardTitle, CardDesc, Field, Input, Steps } from "../ui";
 import { errMsg } from "../lib/err";
 
@@ -15,6 +16,7 @@ export default function Signup() {
   const { s } = useStore();
   const L = s.lang;
   const nav = useNavigate();
+  useEffect(() => { setCanonical("/signup"); }, []);
   const [name, setName] = useState(s.businessName || "");
   const [ownerName, setOwnerName] = useState("");
   const [phone, setPhone] = useState("0550 00 00 00");

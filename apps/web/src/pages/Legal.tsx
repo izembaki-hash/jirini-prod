@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useStore } from "../store";
 import { api, ApiError, type LegalKey, type LegalContent } from "../api";
 import { t } from "../i18n";
+import { setCanonical } from "../lib/seo";
 
 // صفحة عامة (خصوصية/شروط) — تُقرأ من API وتعرض المحتوى المحفوظ أو الافتراضي.
 export default function Legal({ kind }: { kind: LegalKey }) {
@@ -19,6 +20,8 @@ export default function Legal({ kind }: { kind: LegalKey }) {
       .catch((e) => { if (alive) setErr(e instanceof ApiError ? e.code : "network"); });
     return () => { alive = false; };
   }, [kind, L]);
+
+  useEffect(() => { setCanonical(kind === "privacy" ? "/privacy" : "/terms"); }, [kind]);
 
   return (
     <div className="mx-auto w-full max-w-[760px] px-4 py-10" dir={L === "ar" ? "rtl" : "ltr"}>

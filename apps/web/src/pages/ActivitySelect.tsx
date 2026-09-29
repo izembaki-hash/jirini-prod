@@ -1,7 +1,9 @@
 import { Link, useNavigate } from "react-router-dom";
+import { useEffect } from "react";
 import { ArrowLeft, CheckCircle, DeviceMobile, Wallet, Translate } from "@phosphor-icons/react";
 import { useStore } from "../store";
 import { t } from "../i18n";
+import { setCanonical, setHomeJsonLd } from "../lib/seo";
 import { cn } from "../ui";
 
 // صفحة الهبوط/اختيار النشاط: انطباع أول بلا قالب — عنوان يسار، وبطاقتا اختيار كبيرتان.
@@ -28,6 +30,9 @@ export default function ActivitySelect() {
   const { s, update } = useStore();
   const L = s.lang;
   const nav = useNavigate();
+
+  // SEO: canonical الرئيسية + بيانات منظمة (تُزال عند مغادرة الصفحة)
+  useEffect(() => { setCanonical("/"); return setHomeJsonLd(); }, []);
 
   const pick = (type: "restaurant" | "shop") => {
     update((p) => ({ ...p, businessType: type }));

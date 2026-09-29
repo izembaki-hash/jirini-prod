@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useStore } from "../store";
 import { ApiError, api } from "../api";
 import { t } from "../i18n";
+import { setCanonical } from "../lib/seo";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Steps, cn } from "../ui";
 import { errMsg } from "../lib/err";
 
@@ -25,6 +26,7 @@ export default function Checkout() {
   const L = s.lang;
   const [q] = useSearchParams();
   const nav = useNavigate();
+  useEffect(() => { setCanonical("/checkout"); }, []);
   const tenantId = q.get("tenantId") ?? "";
   const slug = q.get("slug") ?? "";
   const type = q.get("type") === "shop" ? "shop" : "restaurant";

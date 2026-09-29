@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+
+# صفحات تتطلب دخولاً أو معاملات — خارج الفهرسة لتوفير ميزانية الزحف
+Disallow: /app/
+Disallow: /ops
+Disallow: /o/
+Disallow: /set-password
+Disallow: /billing/return
+Disallow: /upload
+
+Sitemap: https://jiriny.com/sitemap.xml
