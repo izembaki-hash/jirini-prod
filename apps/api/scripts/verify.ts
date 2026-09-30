@@ -7,6 +7,7 @@ process.env.RATE_LIMIT_SENSITIVE ??= "1000";
 import { buildApp } from "../src/app.js";
 import { MemoryAdapter, createDb } from "../src/db.js";
 import { hashPassword } from "../src/auth.js";
+import { createServer } from "node:http";
 
 const PORT = 4999;
 const BASE = `http://localhost:${PORT}`;
@@ -811,6 +812,50 @@ async function main() {
   ok("edited legal content visible", r.status === 200 && (r.json as { ar: { title: string } }).ar.title === "سياسة محدثة");
   r = await call("PUT", "/ops/legal/unknown", { lang: "ar", title: "x", body: "y" }, undefined, opH);
   ok("legal save unknown key → 404", r.status === 404);
+
+  // F: مستشار الشهر (Groq) — المالك فقط + تخزين شهري
+  r = await call("GET", "/insights/monthly", undefined, cashTok);
+  ok("insights owner-only → 403", r.status === 403);
+  r = await call("POST", "/insights/monthly/generate", {}, cashTok);
+  ok("insights generate owner-only → 403", r.status === 403);
+  delete process.env.GROQ_API_KEY;
+  r = await call("POST", "/insights/monthly/generate", {}, ownerTok2);
+  ok("insights no key → 501", r.status === 501 && (r.json as { error: string }).error === "ai_not_configured");
+  let groqHits = 0;
+  const fakeGroq = createServer((req, res) => {
+    let body = "";
+    req.on("data", (c) => { body += c; });
+    req.on("end", () => {
+      groqHits++;
+      res.writeHead(200, { "Content-Type": "application/json" });
+      if (String(req.url).includes("bad")) { res.end("not-json{{{"); return; }
+      const reqBody = JSON.parse(body) as { model?: string };
+      res.end(JSON.stringify({
+        model: "fake-llama",
+        choices: [{ message: { content: JSON.stringify({ insights: [{ title: "خفّض العمالة", detail: "المبيعات 700 دج مقابل أجور 3000 دج — الإيراد لكل دينار أجر 0.23. أنقص وردية واحدة.", severity: "danger" }] }) } }],
+        _echoModel: reqBody.model,
+      }));
+    });
+  });
+  await new Promise<void>((resolve) => fakeGroq.listen(0, resolve));
+  const groqPort = (fakeGroq.address() as { port: number }).port;
+  process.env.GROQ_API_KEY = "verify-fake-key";
+  process.env.GROQ_BASE = `http://localhost:${groqPort}`;
+  r = await call("POST", "/insights/monthly/generate", {}, ownerTok2);
+  const ins = r.json as { month: string; model: string; content: { insights: { title: string; detail: string; severity: string }[] } };
+  ok("insights generate → 201", r.status === 201 && ins.content?.insights?.length === 1
+    && ins.content.insights[0].severity === "danger" && ins.model === "fake-llama");
+  r = await call("POST", "/insights/monthly/generate", {}, ownerTok2);
+  ok("insights cached (no 2nd provider hit)", r.status === 200 && groqHits === 1);
+  r = await call("GET", "/insights/monthly", undefined, ownerTok2);
+  ok("insights get returns cached", r.status === 200
+    && (r.json as { month: string }).month === ins.month
+    && ((r.json as typeof ins).content?.insights?.length ?? 0) === 1);
+  process.env.GROQ_BASE = `http://localhost:${groqPort}/bad`;
+  r = await call("POST", "/insights/monthly/generate", { force: true }, ownerTok2);
+  ok("insights bad provider → 502", r.status === 502 && (r.json as { error: string }).error === "provider_error");
+  delete process.env.GROQ_API_KEY; delete process.env.GROQ_BASE;
+  fakeGroq.close();
 
   // D: رفع الملفات — صور فقط
   const fdTxt = new FormData();

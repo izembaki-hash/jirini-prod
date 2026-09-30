@@ -177,6 +177,13 @@ async function main() {
   const legalRows = await db.listLegalPages();
   ok("legal list", legalRows.some((x) => x.key === "privacy" && x.lang === "ar" && x.title === "T2"));
 
+  const ins1 = await db.saveInsight({ tenantId: tenant.id, month: "2026-09", content: { insights: [{ title: "t", detail: "d", severity: "warn" }] }, model: "m1" });
+  ok("insight save", !!ins1.id && ins1.month === "2026-09");
+  ok("insight get", (await db.getInsight(tenant.id, "2026-09"))?.model === "m1");
+  ok("insight miss → null", (await db.getInsight(tenant.id, "2026-08")) === null);
+  const ins2 = await db.saveInsight({ tenantId: tenant.id, month: "2026-09", content: { insights: [] }, model: "m2" });
+  ok("insight upsert same row", ins2.id === ins1.id && ins2.model === "m2");
+
   console.log(failures === 0 ? "PG ALL GREEN" : `${failures} FAILURES`);
   process.exit(failures === 0 ? 0 : 1);
 }

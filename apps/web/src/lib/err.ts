@@ -29,6 +29,7 @@ const CODE_KEY: Record<string, TKey> = {
   payment_not_confirmed: "erPayUnconfirmed",
   payment_not_found: "erPayNotFound",
   payments_not_configured: "billNotConf",
+  ai_not_configured: "erAiNotConf",
   provider_error: "erProvider",
   tenant_gone: "erTenantGone",
   tenant_not_found: "erTenantNotFound",

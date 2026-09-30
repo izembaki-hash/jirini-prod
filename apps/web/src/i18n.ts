@@ -430,6 +430,17 @@ const dict = {
   // فلترة التقارير + فرع الموظف
   repBranch: { ar: "تصفية حسب الفرع", fr: "Filtrer par succursale" },
   repAllBranches: { ar: "كل الفروع", fr: "Toutes les succursales" },
+  // مستشار الشهر (Groq — المالك فقط)
+  insTitle: { ar: "مستشار الشهر", fr: "Conseiller du mois" },
+  insSub: { ar: "نصائح ذكية من بيانات آخر 30 يوماً — تُولَّد مرة واحدة شهرياً", fr: "Conseils basés sur les 30 derniers jours — générés une fois par mois" },
+  insGen: { ar: "توليد نصائح الشهر", fr: "Générer les conseils" },
+  insRegen: { ar: "إعادة التوليد", fr: "Régénérer" },
+  insEmpty: { ar: "لا توجد نصائح بعد لهذا الشهر", fr: "Pas encore de conseils ce mois-ci" },
+  insSevDanger: { ar: "عاجل", fr: "Urgent" },
+  insSevWarn: { ar: "تنبيه", fr: "Attention" },
+  insSevInfo: { ar: "معلومة", fr: "Info" },
+  insSevGood: { ar: "ممتاز", fr: "Excellent" },
+  erAiNotConf: { ar: "مفتاح الذكاء الاصطناعي غير مُعد — أضف GROQ_API_KEY في إعدادات الخادم", fr: "Clé IA manquante — ajoutez GROQ_API_KEY sur le serveur" },
   staffBranch: { ar: "فرع الموظف", fr: "Succursale de l'employé" },
   staffBranchNone: { ar: "بدون فرع محدد", fr: "Sans succursale" },
   // الورديات

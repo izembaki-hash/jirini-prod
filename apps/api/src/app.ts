@@ -13,6 +13,7 @@ import { checkPassword, hashPassword, requireAuth, requireRole, requirePage, eff
 import { orderTotal, profitOf, salaryFor, algiersDay, profitBreakdown, dailySlice, PLAN_LIMITS } from "./math.js";
 import { createTransaction as sofizCreate, checkTransaction as sofizCheck, isPaid as sofizIsPaid } from "./sofizpay.js";
 import { DEFAULT_LEGAL } from "./legal-defaults.js";
+import { GROQ_DEFAULT_MODEL, askGroq, buildMonthStats, buildPrompt, currentMonthKey } from "./insights.js";
 
 const normPhone = (p: string) => p.replace(/[\s-]/g, "");
 const STATUSES = ["pending", "preparing", "ready", "onway", "delivered", "cancelled"] as const;
@@ -1442,6 +1443,53 @@ export async function buildApp(db?: DbPort) {
         breakdown: bd, methodSplit,
         avgBasket: live.length ? Math.round(sales / live.length) : 0, perDay, top,
       });
+    } catch (e) { next(e); }
+  });
+
+  // ─── مستشار الشهر (Groq) — المالك فقط ───
+  // المفتاح يُقرأ عند كل طلب: إضافته لـ.env لا تتطلب إعادة تشغيل.
+  // النتيجة تُخزَّن لكل شهر (توليدة واحدة شهرياً لكل مستأجر مهما ضغط الزر).
+  const groqCfg = () => ({
+    key: process.env.GROQ_API_KEY ?? "",
+    model: process.env.GROQ_MODEL ?? GROQ_DEFAULT_MODEL,
+    base: (process.env.GROQ_BASE ?? "https://api.groq.com/openai/v1").replace(/\/$/, ""),
+  });
+  const insightOut = (row: { month: string; model: string; content: { insights: { title: string; detail: string; severity: string }[] }; createdAt: string }) => ({
+    month: row.month, model: row.model, content: row.content, createdAt: row.createdAt,
+  });
+
+  app.get("/insights/monthly", requireAuth, requireRole("owner"), async (req, res, next) => {
+    try {
+      const t = req.auth!.tenant_id;
+      const row = await dbx.getInsight(t, currentMonthKey());
+      res.json(row ? insightOut(row) : { month: currentMonthKey(), content: null });
+    } catch (e) { next(e); }
+  });
+
+  app.post("/insights/monthly/generate", requireAuth, requireRole("owner"), sensitiveLimit, async (req, res, next) => {
+    try {
+      const b = z.object({ force: z.boolean().optional() }).parse(req.body ?? {});
+      const t = req.auth!.tenant_id;
+      const month = currentMonthKey();
+      if (!b.force) {
+        const cached = await dbx.getInsight(t, month);
+        if (cached) { res.json(insightOut(cached)); return; }
+      }
+      const cfg = groqCfg();
+      if (!cfg.key) { res.status(501).json({ error: "ai_not_configured" }); return; }
+      const tenant = await dbx.getTenant(t);
+      if (!tenant) { res.status(404).json({ error: "not_found", entity: "tenant" }); return; }
+      const branches = await dbx.listBranches(t);
+      const stats = await buildMonthStats(dbx, t, tenant.type, branches.map((x) => x.name));
+      const { system, user } = buildPrompt(stats, tenant.lang === "fr" ? "fr" : "ar");
+      let out;
+      try {
+        out = await askGroq({ base: cfg.base, key: cfg.key, model: cfg.model, system, user });
+      } catch {
+        res.status(502).json({ error: "provider_error" }); return;
+      }
+      const saved = await dbx.saveInsight({ tenantId: t, month, content: { insights: out.insights }, model: out.model });
+      res.status(201).json(insightOut(saved));
     } catch (e) { next(e); }
   });
 

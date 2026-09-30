@@ -42,7 +42,8 @@ model Tenant {
   payments        Payment[]
   overheads       Overhead[]
   customerPayments CustomerPayment[]
-  createdAt       DateTime @default(now())
+  insights      Insight[]
+  createdAt     DateTime @default(now())
 }
 
 model Branch {
@@ -402,4 +403,18 @@ model LegalPage {
   updatedAt DateTime @default(now()) @updatedAt
 
   @@unique([key, lang])
+}
+
+// نصائح الذكاء الاصطناعي الشهرية — مخزّنة لكل مستأجر/شهر، تُولَّد عند الطلب فقط.
+model Insight {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  month     String
+  content   Json
+  model     String   @default("")
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, month])
+  @@index([tenantId])
 }

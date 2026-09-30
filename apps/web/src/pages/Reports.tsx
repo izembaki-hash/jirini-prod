@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { fmtDzd, profitOf, useStore, displayName, dailySlice, laborFor, attSummary, type Order } from "../store";
-import { api, toOrder } from "../api";
-import { useAuth } from "../auth";
+import { api, toOrder, type MonthInsight } from "../api";
+import { connected, useAuth } from "../auth";
 import { t } from "../i18n";
+import { errToast } from "../lib/err";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Segmented, Stat } from "../ui";
 import { ReportDoc, printDoc, shopOf } from "../print";
 import { Bars } from "../components/Charts";
@@ -20,6 +22,25 @@ export default function Reports() {
   const scopeB = showBranchFilter ? repBranch : "";
   // مالك وحده: جلب الطلبات حسب الفلتر من الخادم (س orders يخص الفرع النشط فقط)
   const [repOrders, setRepOrders] = useState<Order[] | null>(null);
+  // مستشار الشهر (Groq — المالك فقط): يُجلب المخزّن، والتوليد عند الطلب فقط.
+  const [insight, setInsight] = useState<MonthInsight | null>(null);
+  const [insBusy, setInsBusy] = useState(false);
+  useEffect(() => {
+    if (!connected() || !isOwner) return;
+    api.insightsGet().then(setInsight).catch(() => null);
+  }, [isOwner]);
+  const genInsight = async (force: boolean) => {
+    if (!connected()) { toast.error(t(L, "eConn")); return; }
+    setInsBusy(true);
+    try {
+      setInsight(await api.insightsGenerate(force));
+      toast.success(t(L, "done"));
+    } catch (ex) { errToast(L, ex); } finally { setInsBusy(false); }
+  };
+  const sevTone = (sev: string): "bad" | "warn" | "info" | "ok" =>
+    sev === "danger" ? "bad" : sev === "warn" ? "warn" : sev === "good" ? "ok" : "info";
+  const sevLabel = (sev: string) =>
+    sev === "danger" ? t(L, "insSevDanger") : sev === "warn" ? t(L, "insSevWarn") : sev === "good" ? t(L, "insSevGood") : t(L, "insSevInfo");
   useEffect(() => {
     if (!showBranchFilter) return;
     let alive = true;
@@ -140,6 +161,42 @@ export default function Reports() {
           <Button variant="outline" onClick={csv}>Excel (CSV)</Button>
         </span>
       </div>
+
+      {isOwner && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t(L, "insTitle")}</CardTitle>
+            <p className="text-xs text-muted">{t(L, "insSub")}</p>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            {insight?.content ? (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2 text-xs text-muted">
+                  <span className="tnum">{insight.month}</span>
+                  {insight.createdAt && <span>· {insight.createdAt.slice(0, 10)}</span>}
+                  <Button size="sm" variant="ghost" loading={insBusy} onClick={() => genInsight(true)} className="ms-auto">
+                    {t(L, "insRegen")}
+                  </Button>
+                </div>
+                {insight.content.insights.map((it, i) => (
+                  <div key={i} className="rounded-[10px] border border-line bg-canvas p-3">
+                    <div className="flex items-center gap-2">
+                      <Badge tone={sevTone(it.severity)}>{sevLabel(it.severity)}</Badge>
+                      <b className="text-sm">{it.title}</b>
+                    </div>
+                    <p className="mt-1 text-sm leading-7 text-muted">{it.detail}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col items-start gap-2">
+                <p className="text-sm text-muted">{t(L, "insEmpty")}</p>
+                <Button loading={insBusy} onClick={() => genInsight(false)}>{t(L, "insGen")}</Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label={t(L, "statSales")} value={fmtDzd(sales)} />

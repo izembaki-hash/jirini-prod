@@ -99,6 +99,14 @@ export interface LegalPageRow {
   id: string; key: string; lang: string; title: string; body: string; updatedAt: string;
 }
 
+// نصيحة شهرية واحدة من المستشار (بنية JSON مخزّنة في InsightRow.content)
+export type InsightSeverity = "danger" | "warn" | "info" | "good";
+export interface InsightItem { title: string; detail: string; severity: InsightSeverity }
+export interface InsightRow {
+  id: string; tenantId: string; month: string;
+  content: { insights: InsightItem[] }; model: string; createdAt: string;
+}
+
 // قاعدة حالة الفاتورة الموحدة (مطبقة في كلا المحوّلين): paid الكامل → paid، صفر → unpaid، وإلا partial.
 export function purchaseStatus(total: number, paid: number): string {
   if (paid <= 0) return "unpaid";
@@ -214,6 +222,9 @@ export interface DbPort {
   // صفحات قانونية (محتوى عام — privacy/terms بالعربية والفرنسية)
   listLegalPages(): Promise<LegalPageRow[]>;
   saveLegalPage(p: { key: string; lang: string; title: string; body: string }): Promise<LegalPageRow>;
+  // نصائح المستشار الشهرية (مستأجر/شهر واحد)
+  getInsight(tenantId: string, month: string): Promise<InsightRow | null>;
+  saveInsight(i: Omit<InsightRow, "id" | "createdAt">): Promise<InsightRow>;
 }
 
 // ─── ذاكرة: تطوير محلي واختبارات — نفس العقد تماماً ───
@@ -582,6 +593,20 @@ export class MemoryAdapter implements DbPort {
       key: p.key, lang: p.lang, title: p.title, body: p.body, updatedAt: new Date().toISOString(),
     };
     this.legal.push(row);
+    return row;
+  }
+  insights: InsightRow[] = [];
+  async getInsight(tenantId: string, month: string) {
+    return this.insights.find((x) => x.tenantId === tenantId && x.month === month) ?? null;
+  }
+  async saveInsight(i: Omit<InsightRow, "id" | "createdAt">) {
+    const cur = this.insights.find((x) => x.tenantId === i.tenantId && x.month === i.month);
+    if (cur) {
+      cur.content = i.content; cur.model = i.model;
+      return cur;
+    }
+    const row: InsightRow = { ...i, id: uid("ins"), createdAt: now() };
+    this.insights.push(row);
     return row;
   }
 }
@@ -1083,6 +1108,20 @@ export class PrismaAdapter implements DbPort {
       create: { key: p.key, lang: p.lang, title: p.title, body: p.body },
       update: { title: p.title, body: p.body },
     }));
+  }
+  async getInsight(tenantId: string, month: string) {
+    const r = await this.m("insight").findFirst({ where: { tenantId, month } });
+    if (!r) return null;
+    const row = PrismaAdapter.row<InsightRow>(r);
+    return { ...row, createdAt: new Date(row.createdAt).toISOString() };
+  }
+  async saveInsight(i: Omit<InsightRow, "id" | "createdAt">) {
+    const row = PrismaAdapter.row<InsightRow>(await this.m("insight").upsert({
+      where: { tenantId_month: { tenantId: i.tenantId, month: i.month } },
+      create: { tenantId: i.tenantId, month: i.month, content: i.content, model: i.model },
+      update: { content: i.content, model: i.model },
+    }));
+    return { ...row, createdAt: new Date(row.createdAt).toISOString() };
   }
   async getSubscription(tenantId: string) {
     return PrismaAdapter.row<SubscriptionRow | null>(

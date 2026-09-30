@@ -55,6 +55,9 @@ export interface LoginResp {
 
 export interface ApiLoginUser { id: string; employeeId: string | null; name: string; role: string; phone?: string; branchId?: string | null; hasPin: boolean; pages: string[] | null; active: boolean }
 
+export interface InsightItem { title: string; detail: string; severity: "danger" | "warn" | "info" | "good" }
+export interface MonthInsight { month: string; model?: string; content: { insights: InsightItem[] } | null; createdAt?: string }
+
 export const APP_PAGES = [
   "pos", "shifts", "inventory", "kitchen", "orders", "customers",
   "staff", "reports", "branches", "growth", "settings",
@@ -177,6 +180,9 @@ export const api = {
     req<{ status: string; expiresAt?: string | null }>(`/billing/sofizpay/status/${paymentId}`),
   billingSubmitManual: (ref: string, months: number) =>
     req<{ ok: boolean; status: string }>(`/billing/submit-payment`, { method: "POST", body: JSON.stringify({ ref, months }) }),
+  insightsGet: () => req<MonthInsight>("/insights/monthly"),
+  insightsGenerate: (force?: boolean) =>
+    req<MonthInsight>(`/insights/monthly/generate`, { method: "POST", body: JSON.stringify({ force: !!force }) }),
   publicSignup: (b: { name: string; type: "restaurant" | "shop"; phone: string; address?: string; plan?: "starter" | "pro" | "mega"; ownerName: string; email?: string; lang?: "ar" | "fr" }) =>
     req<{ tenantId: string; slug: string; ownerPhone: string; email: string | null }>(`/public/signup`, { method: "POST", body: JSON.stringify(b) }, false),
   publicCheckout: (b: { tenantId: string; plan?: "starter" | "pro" | "mega"; months?: number; cycle?: "monthly" | "yearly"; email: string; fullName?: string }) =>
