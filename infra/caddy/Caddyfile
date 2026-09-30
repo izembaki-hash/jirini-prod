@@ -90,6 +90,10 @@
         reverse_proxy api:4000
     }
 
+    handle /insights* {
+        reverse_proxy api:4000
+    }
+
     handle /wastage* {
         reverse_proxy api:4000
     }
