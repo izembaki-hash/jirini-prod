@@ -3,7 +3,7 @@
 import { salaryFor } from "./math.js";
 import type { DbPort, InsightItem } from "./db.js";
 
-export const GROQ_DEFAULT_MODEL = "llama-3.3-70b-versatile";
+export const GROQ_DEFAULT_MODEL = "openai/gpt-oss-120b";
 const DAY = 86_400_000;
 const AR_DAYS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 
