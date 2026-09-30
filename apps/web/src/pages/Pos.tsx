@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Plus, X } from "@phosphor-icons/react";
+import { Plus, X, Barcode } from "@phosphor-icons/react";
 import { fmtDzd, useStore, displayName, catName } from "../store";
 import { api, currentBranch, uploadUrl } from "../api";
 import { connected } from "../auth";
 import { t } from "../i18n";
 import { Badge, Button, Card, Empty, Field, Input, Segmented } from "../ui";
 import { Receipt } from "../components/Receipt";
+import { ScanDialog } from "../components/ScanDialog";
+import { beepOk } from "../lib/beep";
 import { ImagePicker } from "../components/ImagePicker";
 import { InvoiceDoc, printDoc, shopOf } from "../print";
 import { btSupported, btSavedName, btPrintReceipt, btErrorMessage } from "../lib/btprinter";
@@ -105,12 +107,24 @@ export default function Pos() {
   }, [s.products, q, cat]);
 
   // قارئ الباركود الخارجي يرسل Enter — نضيف أول نتيجة ونجهز للمسح التالي.
+  // التطابق التام للباركود أولاً، ثم الجزئي — يخدم القارئ والكاميرا معاً.
+  const [scanOpen, setScanOpen] = useState(false);
+  const addFirst = (code: string) => {
+    const needle = code.trim();
+    if (!needle) return;
+    const pool = s.products.filter((p) => p.active && p.saleable !== false && (cat === "all" || p.cat === cat));
+    const low = needle.toLowerCase();
+    const exact = pool.find((p) => (p.barcode ?? "") === needle);
+    const sub = pool.filter((p) => p.name.includes(needle) || p.nameFr.toLowerCase().includes(low) || (p.barcode ?? "").includes(needle));
+    const ordered = exact ? [exact, ...sub.filter((p) => p.id !== exact.id)] : sub;
+    const pick = ordered.find((p) => p.qty > 0) ?? ordered[0];
+    if (!pick) return;
+    add(pick.id);
+    beepOk();
+    setQ("");
+  };
   const onSearchKey = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && list.length > 0) {
-      const first = list.find((p) => p.qty > 0) ?? list[0];
-      add(first.id);
-      setQ("");
-    }
+    if (e.key === "Enter" && list.length > 0) addFirst(q);
   };
 
   const lines = Object.entries(cart).map(([id, qty]) => ({ ...s.products.find((p) => p.id === id)!, qty })).filter((x) => x.id);
@@ -269,10 +283,15 @@ export default function Pos() {
       <section className="flex flex-col gap-3" aria-label={t(L, "pos")}>
         <Input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onSearchKey}
           placeholder={t(L, "search")} aria-label={t(L, "search")} inputMode="search" enterKeyHint="search" />
+        <ScanDialog open={scanOpen} onClose={() => setScanOpen(false)} onScan={(code) => { setScanOpen(false); addFirst(code); }} />
         <div className="flex items-stretch gap-2">
           <button type="button" onClick={openQa} title={t(L, "addProduct")} aria-label={t(L, "addProduct")}
             className="btn-press grid size-11 shrink-0 touch-manipulation place-items-center self-center rounded-full border border-dashed border-line-strong text-growth-deep transition-colors hover:border-growth hover:bg-growth/5">
             <Plus size={20} weight="bold" aria-hidden />
+          </button>
+          <button type="button" onClick={() => setScanOpen(true)} title={t(L, "scanBtn")} aria-label={t(L, "scanBtn")}
+            className="btn-press grid size-11 shrink-0 touch-manipulation place-items-center self-center rounded-full border border-dashed border-line-strong text-growth-deep transition-colors hover:border-growth hover:bg-growth/5">
+            <Barcode size={20} weight="bold" aria-hidden />
           </button>
           <div className="snap-row -mx-4 flex min-w-0 flex-1 gap-1.5 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0" role="group" aria-label="التصنيفات">
           {s.businessType !== "restaurant" && (

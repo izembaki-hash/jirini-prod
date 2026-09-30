@@ -47,6 +47,7 @@ const CODE_KEY: Record<string, TKey> = {
   payload_too_large: "erTooLarge",
   same_branch: "erSameBranch",
   duplicate_phone: "eDupPhone",
+  barcode_exists: "erBarcodeExists",
   branch_forbidden: "eBranchForbidden",
 };
 

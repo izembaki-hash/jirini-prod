@@ -435,6 +435,15 @@ async function main() {
     ok("order with other-branch product â†’ 409", r.status === 409);
     r = await call("POST", "/products", { name: "ÙƒØ§Ø´ÙŠØ±-ÙØ±Ø¹", branchId: branch.id, buyPrice: 1, sellPrice: 2, qty: 1 }, cashTok);
     ok("cashier create product â†’ 403 (role)", r.status === 403);
+    // منع الباركود المكرر (الماسح يعتمد على الفرادة)
+    r = await call("POST", "/products", { name: "scanned", branchId: branch.id, buyPrice: 5, sellPrice: 9, qty: 3, barcode: " 611125000001 " }, ownerTok2);
+    ok("create with barcode (trimmed)", r.status === 201 && (r.json as { barcode: string }).barcode === "611125000001");
+    r = await call("POST", "/products", { name: "dupe", branchId: branch.id, buyPrice: 5, sellPrice: 9, qty: 1, barcode: "611125000001" }, ownerTok2);
+    ok("duplicate barcode rejects 409", r.status === 409 && (r.json as { error: string }).error === "barcode_exists");
+    r = await call("PATCH", `/products/${p1.id}`, { barcode: "611125000001" }, ownerTok2);
+    ok("patch to duplicate barcode rejects 409", r.status === 409 && (r.json as { error: string }).error === "barcode_exists");
+    r = await call("PATCH", `/products/${p1.id}`, { barcode: null }, ownerTok2);
+    ok("clear barcode ok", r.status === 200);
     // real cross-branch stock transfer (branches page)
     r = await call("POST", "/branches/transfer", { productId: p1.id, fromBranchId: branch.id, toBranchId: branch.id, qty: 1 }, ownerTok2);
     ok("transfer same branch -> 400", r.status === 400 && (r.json as { error: string }).error === "same_branch");

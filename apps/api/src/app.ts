@@ -552,10 +552,15 @@ export async function buildApp(db?: DbPort) {
       const b = zProduct.parse(req.body);
       const branchId = branchOf(req) ?? b.branchId;
       await assertBranch(dbx, req.auth!.tenant_id, branchId);
+      const code = b.barcode?.trim() || null;
+      if (code) {
+        const clash = (await dbx.listProducts(req.auth!.tenant_id)).some((p) => (p.barcode ?? "") === code);
+        if (clash) { res.status(409).json({ error: "barcode_exists" }); return; }
+      }
       res.status(201).json(await dbx.createProduct({
         tenantId: req.auth!.tenant_id, name: b.name, nameFr: b.nameFr ?? b.name,
         branchId, buyPrice: b.buyPrice, sellPrice: b.sellPrice, qty: b.qty, minQty: b.minQty,
-        barcode: b.barcode ?? null, imageUrl: b.imageUrl ?? null,
+        barcode: code, imageUrl: b.imageUrl ?? null,
         category: b.category ?? null, shelf: b.shelf ?? null, expiryDate: b.expiryDate ?? null,
         wholesalePrice: b.wholesalePrice ?? null, active: true, saleable: b.saleable,
       }));
@@ -573,6 +578,14 @@ export async function buildApp(db?: DbPort) {
         saleable: z.boolean().optional(),
       }).parse(req.body);
       await mustOwnProduct(dbx, req.auth!.tenant_id, branchOf(req), req.params.id);
+      if (b.barcode !== undefined) {
+        b.barcode = b.barcode?.trim() ? b.barcode.trim() : null;
+        if (b.barcode) {
+          const clash = (await dbx.listProducts(req.auth!.tenant_id))
+            .some((p) => p.id !== req.params.id && (p.barcode ?? "") === b.barcode);
+          if (clash) { res.status(409).json({ error: "barcode_exists" }); return; }
+        }
+      }
       res.json(await dbx.updateProduct(req.auth!.tenant_id, req.params.id, b));
     } catch (e) { next(e); }
   });

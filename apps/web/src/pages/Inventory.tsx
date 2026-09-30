@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { PencilSimple, X } from "@phosphor-icons/react";
+import { PencilSimple, X, Barcode } from "@phosphor-icons/react";
 import { fmtDzd, useStore, displayName, type Product } from "../store";
 import { api, currentBranch, type ApiProduct } from "../api";
 import { errToast } from "../lib/err";
@@ -8,6 +8,8 @@ import { connected } from "../auth";
 import { t } from "../i18n";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Empty, Field, Input, Segmented, cn } from "../ui";
 import { ImagePicker } from "../components/ImagePicker";
+import { ScanDialog } from "../components/ScanDialog";
+import { beepOk } from "../lib/beep";
 
 // 3. المخزون: منتجات + وصفات (مطاعم) + مورّدون + مشتريات/ديون + هدر + تنبيهات.
 type Tab = "products" | "recipes" | "suppliers" | "purchases";
@@ -93,8 +95,9 @@ const toLocalProduct = (sp: ApiProduct) => ({
 });
 
 // ─── حوار تعديل صنف: ورقة سفلية في الهاتف، بطاقة متمركزة في المكتب ───
-function ProductEditDialog({ p, cats, isResto, onClose, onSave }: {
+function ProductEditDialog({ p, cats, isResto, onClose, onSave, requestScan }: {
   p: Product; cats: string[]; isResto: boolean; onClose: () => void;
+  requestScan: (apply: (code: string) => void) => void;
   onSave: (patch: {
     name: string; sell: number; buy: number; min: number; barcode?: string; cat: string;
     saleable: boolean; active: boolean; shelf?: string; expiry?: string; wholesale?: number; img?: string | null;
@@ -171,7 +174,14 @@ function ProductEditDialog({ p, cats, isResto, onClose, onSave }: {
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label={t(L, "pBarcode")} id="ep-bc">
-                <Input id="ep-bc" value={barcode} onChange={(e) => setBarcode(e.target.value)} inputMode="numeric" dir="ltr" />
+                <div className="flex gap-2">
+                  <Input id="ep-bc" value={barcode} onChange={(e) => setBarcode(e.target.value)} inputMode="numeric" dir="ltr" className="min-w-0 flex-1" />
+                  <button type="button" onClick={() => requestScan((code) => setBarcode(code))}
+                    title={t(L, "scanBtn")} aria-label={t(L, "scanBtn")}
+                    className="btn-press grid size-11 shrink-0 touch-manipulation place-items-center rounded-[10px] border border-line text-muted transition-colors hover:bg-canvas hover:text-ink">
+                    <Barcode size={20} aria-hidden />
+                  </button>
+                </div>
               </Field>
               <Field label={t(L, "pCat")} id="ep-cat">
                 <Input id="ep-cat" value={cat} onChange={(e) => setCat(e.target.value)} list="ep-cats" autoComplete="off" enterKeyHint="done" />
@@ -212,6 +222,8 @@ function ProductsTab() {
   const [buy, setBuy] = useState("");
   const [qty, setQty] = useState("");
   const [barcode, setBarcode] = useState("");
+  // هدف المسح الحالي: حوار واحد في جذر التبويب (بلا transform يحتجز الـfixed)
+  const [scanApply, setScanApply] = useState<((code: string) => void) | null>(null);
   const [saleable, setSaleable] = useState(true);
   const [shelf, setShelf] = useState("");
   const [expiry, setExpiry] = useState("");
@@ -329,7 +341,14 @@ function ProductsTab() {
                 <Field label={t(L, "pQty")} id="qq"><Input id="qq" inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value)} /></Field>
               </div>
               <Field label={t(L, "pBarcode")} id="bc" hint={t(L, "pBarcodeHint")}>
-                <Input id="bc" value={barcode} onChange={(e) => setBarcode(e.target.value)} inputMode="numeric" />
+                <div className="flex gap-2">
+                  <Input id="bc" value={barcode} onChange={(e) => setBarcode(e.target.value)} inputMode="numeric" className="min-w-0 flex-1" />
+                  <button type="button" onClick={() => setScanApply(() => (code: string) => setBarcode(code))}
+                    title={t(L, "scanBtn")} aria-label={t(L, "scanBtn")}
+                    className="btn-press grid size-11 shrink-0 touch-manipulation place-items-center rounded-[10px] border border-line text-muted transition-colors hover:bg-canvas hover:text-ink">
+                    <Barcode size={20} aria-hidden />
+                  </button>
+                </div>
               </Field>
               {!isResto && (
                 <div className="grid grid-cols-3 gap-2">
@@ -410,8 +429,11 @@ function ProductsTab() {
           isResto={isResto}
           onClose={() => setEditing(null)}
           onSave={(patch) => saveEdit(editing.id, patch)}
+          requestScan={(apply) => setScanApply(() => apply)}
         />
       )}
+      <ScanDialog open={scanApply !== null} onClose={() => setScanApply(null)}
+        onScan={(code) => { beepOk(); scanApply?.(code); setScanApply(null); }} />
     </div>
   );
 }
