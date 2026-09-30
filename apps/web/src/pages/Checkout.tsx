@@ -6,6 +6,7 @@ import { t } from "../i18n";
 import { setCanonical } from "../lib/seo";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Steps, cn } from "../ui";
 import { errMsg } from "../lib/err";
+import { track } from "../lib/pixel";
 
 // صفحة الدفع بعد إدخال معلومات النشاط — خطة + دورة + تحويل لـSofizPay.
 const PLANS = [
@@ -74,6 +75,7 @@ export default function Checkout() {
         fullName,
       });
       // حوّل لصفحة CIB/Edahabia
+      track("InitiateCheckout", { value: amount, currency: "DZD", num_items: finalMonths });
       window.location.href = r.paymentUrl;
     } catch (ex) {
       setErr(ex instanceof ApiError && ex.status === 501 ? t(L, "billNotConf") : errMsg(L, ex));

@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useStore } from "../store";
 import { t } from "../i18n";
 import { ApiError, api } from "../api";
 import { connected } from "../auth";
+import { track } from "../lib/pixel";
 import { Button, Card, CardContent } from "../ui";
 
 // صفحة العودة من الدفع: تستعلم الحالة من الخادم (المصدر الوحيد للحقيقة).
@@ -14,6 +15,7 @@ export default function BillingReturn() {
   const okParam = q.get("ok");
   const pref = q.get("pref") ?? "";
   const [state, setState] = useState<"checking" | "paid" | "failed" | "pending">("checking");
+  const paidTracked = useRef(false);
 
   useEffect(() => {
     if (!pref || !connected()) { setState(okParam === "1" ? "paid" : "failed"); return; }
@@ -22,7 +24,10 @@ export default function BillingReturn() {
       try {
         const r = await api.billingReturnStatus(pref);
         if (stop) return;
-        if (r.status === "paid") setState("paid");
+        if (r.status === "paid") {
+          setState("paid");
+          if (!paidTracked.current) { paidTracked.current = true; track("Purchase", { currency: "DZD" }); }
+        }
         else if (r.status === "failed" || r.status === "expired") setState("failed");
         else setState("pending");
       } catch (e) {

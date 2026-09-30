@@ -9,6 +9,7 @@ import { ImagePicker } from "../components/ImagePicker";
 import { btSupported, btSavedName, btForget, btTestPrint, btPair, btPrefs, btSavePrefs, btErrorMessage } from "../lib/btprinter";
 import { t, type TKey } from "../i18n";
 import { errMsg, errToast } from "../lib/err";
+import { track } from "../lib/pixel";
 
 // 11. الإعدادات: اشتراك + ضرائب + أمان + نسخ احتياطي + أجهزة + أوفر تايم + CRM + لغة.
 const PLAN_META: { id: PlanId; key: TKey; price: number }[] = [
@@ -125,6 +126,7 @@ function BillingPanel() {
         cycle,
         email,
       });
+      track("InitiateCheckout", { value: cycle === "yearly" ? yearlyTotal : monthlyTotal, currency: "DZD" });
       window.location.href = r.paymentUrl;
     } catch (ex) {
       toast.error(ex instanceof ApiError && ex.status === 501 ? t(L, "billNotConf") : errMsg(L, ex, t(L, "errSaving")));

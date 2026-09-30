@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster } from "sonner";
 import { StoreProvider, useStore } from "./store";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { PixelPageView } from "./lib/pixel";
 import { AuthProvider, useAuth, canSee } from "./auth";
 import { t } from "./i18n";
 import { Shell } from "./components/Layout";
@@ -89,6 +90,7 @@ export default function App() {
         <ToasterHost />
         <ErrorBoundary>
         <BrowserRouter>
+          <PixelPageView />
           <Routes>
             <Route path="/" element={lazyRoute(<ActivitySelect />)} />
             <Route path="/signup" element={lazyRoute(<Signup />)} />

@@ -6,6 +6,7 @@ import { t } from "../i18n";
 import { setCanonical } from "../lib/seo";
 import { Button, Card, CardContent, CardHeader, CardTitle, CardDesc, Field, Input, Steps } from "../ui";
 import { errMsg } from "../lib/err";
+import { track } from "../lib/pixel";
 
 // معلومات النشاط — تسبق الدفع. لا كلمة سر هنا (تُضبط بعد الدفع).
 export default function Signup() {
@@ -45,6 +46,7 @@ export default function Signup() {
         lang: L,
       });
       // انتقل إلى صفحة الدفع مع tenantId ليُهيّئ الدفع.
+      track("Lead", { content_name: plan, value: plan === "starter" ? 2500 : plan === "mega" ? 4500 : 3000, currency: "DZD" });
       const q = new URLSearchParams({
         tenantId: r.tenantId,
         slug: r.slug,
