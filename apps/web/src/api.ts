@@ -189,6 +189,7 @@ export const api = {
     req<{ paymentId: string; paymentUrl: string; slug: string }>(`/public/checkout`, { method: "POST", body: JSON.stringify(b) }, false),
   setPassword: (paymentId: string, password: string) =>
     req<{ ok: boolean; slug: string }>(`/public/set-password`, { method: "POST", body: JSON.stringify({ paymentId, password }) }, false),
+  publicVideos: () => req<ApiPromoVideo[]>("/public/videos", undefined, false),
   // ورديات وحضور ورواتب وموظفون
   employees: () => req<ApiEmployee[]>("/employees"),
   createEmployeeAccount: (e: { name: string; phone: string; password: string; role: string; title?: string; halfWage?: number; branchId?: string }) =>
@@ -305,7 +306,18 @@ export const ops = {
   legalGet: (key: LegalKey) => opsReq<LegalPageResp>(`/public/legal/${key}`),
   legalSave: (key: LegalKey, lang: LegalLang, title: string, body: string) =>
     opsReq<{ id: string }>(`/ops/legal/${key}`, { method: "PUT", body: JSON.stringify({ lang, title, body }) }),
+  videosList: () => opsReq<ApiPromoVideo[]>("/ops/videos"),
+  videoCreate: (v: { url: string; title: string; lang: string; sort?: number }) =>
+    opsReq<ApiPromoVideo>("/ops/videos", { method: "POST", body: JSON.stringify(v) }),
+  videoUpdate: (id: string, patch: { title?: string; sort?: number; active?: boolean }) =>
+    opsReq<ApiPromoVideo>(`/ops/videos/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  videoDelete: (id: string) => opsReq<{ ok: boolean }>(`/ops/videos/${id}`, { method: "DELETE" }),
 };
+
+export interface ApiPromoVideo {
+  id: string; youtubeId: string; title: string; lang: string;
+  sort: number; active: boolean; createdAt: string;
+}
 
 export const supportSubmit = (message: string, contact?: string) =>
   req<{ id: string }>("/support/tickets", { method: "POST", body: JSON.stringify({ message, contact }) });

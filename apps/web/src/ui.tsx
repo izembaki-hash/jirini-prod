@@ -40,14 +40,15 @@ export const Button = React.forwardRef<HTMLButtonElement,
 );
 
 // تحكم مجزّأ: بديل موحد لكل أزرار الاختيار الثنائية/الثلاثية (الدفع، النوع، الفترة).
-export function Segmented<T extends string>({ label, options, value, onChange }: {
+export function Segmented<T extends string>({ label, options, value, onChange, className }: {
   label: string;
   options: { value: T; label: string }[];
   value: T;
   onChange: (v: T) => void;
+  className?: string;
 }) {
   return (
-    <div className="flex gap-1 rounded-[10px] border border-line bg-canvas p-1" role="radiogroup" aria-label={label}>
+    <div className={cn("flex gap-1 rounded-[10px] border border-line bg-canvas p-1", className)} role="radiogroup" aria-label={label}>
       {options.map((o) => (
         <button
           key={o.value}

@@ -418,3 +418,17 @@ model Insight {
   @@unique([tenantId, month])
   @@index([tenantId])
 }
+
+// فيديوهات يوتيوب الترويجية — عامة (مشغّل المنصة)، تظهر في صفحة الهبوط.
+// يُخزَّن معرّف يوتيوب فقط (صفر تخزين على السيرفر).
+model PromoVideo {
+  id        String   @id @default(cuid())
+  youtubeId String   @map("youtube_id")
+  title     String
+  lang      String   @default("ar")
+  sort      Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@unique([youtubeId, lang])
+}

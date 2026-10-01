@@ -49,6 +49,8 @@ const CODE_KEY: Record<string, TKey> = {
   duplicate_phone: "eDupPhone",
   barcode_exists: "erBarcodeExists",
   branch_forbidden: "eBranchForbidden",
+  bad_youtube: "erBadYoutube",
+  video_exists: "erVideoExists",
 };
 
 // كيانات رسائل 404 (تُرسل مع حقل entity من الـAPI)
@@ -56,7 +58,7 @@ const ENTITY_KEY: Record<string, TKey> = {
   product: "entProduct", order: "entOrder", shift: "entShift", goal: "entGoal",
   recipe: "entRecipe", supplier: "entSupplier", purchase: "entPurchase", driver: "entDriver",
   tenant: "entTenant", payment: "entPayment", overhead: "entOverhead", customer: "entCustomer",
-  employee: "entEmployee", user: "entUser", branch: "entBranch",
+  employee: "entEmployee", user: "entUser", branch: "entBranch", video: "entVideo",
 };
 
 function fill(s: string, vars: Record<string, string | number>): string {

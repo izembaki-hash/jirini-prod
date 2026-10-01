@@ -1,8 +1,9 @@
 import { Link, useNavigate } from "react-router-dom";
-import { useEffect } from "react";
-import { ArrowLeft, CheckCircle, DeviceMobile, Translate, FacebookLogo, InstagramLogo, WhatsappLogo, TelegramLogo, EnvelopeSimple } from "@phosphor-icons/react";
+import { useEffect, useState } from "react";
+import { ArrowLeft, CheckCircle, DeviceMobile, Play, Translate, FacebookLogo, InstagramLogo, WhatsappLogo, TelegramLogo, EnvelopeSimple } from "@phosphor-icons/react";
 import { useStore } from "../store";
-import { t } from "../i18n";
+import { t, type Lang } from "../i18n";
+import { api, type ApiPromoVideo } from "../api";
 import { setCanonical, setHomeJsonLd } from "../lib/seo";
 import { cn } from "../ui";
 
@@ -125,6 +126,8 @@ export default function ActivitySelect() {
         <li className="flex items-center gap-1.5"><DeviceMobile size={17} aria-hidden />{t(L, "trustMobile")}</li>
       </ul>
 
+      <VideosSection lang={L} />
+
       {/* تذييل المنشئ — الصفحة الأولى فقط */}
       <footer className="mt-10 flex flex-col items-center gap-3 border-t border-line pt-6 text-center">
         <img src="/img/footer-logo.jpg" alt="SERV-Tech Solutions" width={246} height={96} loading="lazy" className="h-12 w-auto rounded-lg" />
@@ -139,5 +142,55 @@ export default function ActivitySelect() {
         </div>
       </footer>
     </div>
+  );
+}
+
+// فيديوهات يوتيوب الترويجية — تُجلب عامةً، والقسم مخفي بلا فيديوهات.
+// الواجهة: مصغرة + زر تشغيل، والـiframe يُحمَّل عند النقر فقط (سرعة + خصوصية).
+function VideosSection({ lang }: { lang: Lang }) {
+  const L = lang;
+  const [videos, setVideos] = useState<ApiPromoVideo[] | null>(null);
+  const [playing, setPlaying] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setPlaying(null);
+    api.publicVideos()
+      .then((list) => {
+        if (!alive) return;
+        const mine = list.filter((v) => v.lang === lang);
+        setVideos(mine.length ? mine : list);
+      })
+      .catch(() => { if (alive) setVideos([]); });
+    return () => { alive = false; };
+  }, [lang]);
+  if (!videos?.length) return null;
+  return (
+    <section aria-label={t(L, "vidTitle")} className="mt-10">
+      <h2 className="text-2xl font-bold md:text-3xl">{t(L, "vidTitle")}</h2>
+      <p className="mt-1 text-sm text-muted">{t(L, "vidSub")}</p>
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {videos.map((v) => (
+          <div key={v.id} className="overflow-hidden rounded-2xl border border-line bg-surface">
+            {playing === v.id ? (
+              <iframe src={`https://www.youtube-nocookie.com/embed/${v.youtubeId}?autoplay=1&rel=0`}
+                title={v.title} allow="accelerometer; autoplay; encrypted-media; picture-in-picture"
+                allowFullScreen className="aspect-video w-full" />
+            ) : (
+              <button type="button" onClick={() => setPlaying(v.id)}
+                aria-label={`${t(L, "vidPlay")}: ${v.title}`} className="group relative block w-full">
+                <img src={`https://i.ytimg.com/vi/${v.youtubeId}/hqdefault.jpg`} alt="" loading="lazy"
+                  className="aspect-video w-full object-cover" />
+                <span aria-hidden className="absolute inset-0 grid place-items-center bg-black/25 transition-colors group-hover:bg-black/10">
+                  <span className="grid size-14 place-items-center rounded-full bg-white/95 text-ink shadow-lg">
+                    <Play size={26} weight="fill" aria-hidden />
+                  </span>
+                </span>
+              </button>
+            )}
+            <p className="truncate px-4 py-3 text-sm font-bold">{v.title}</p>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }

@@ -184,6 +184,15 @@ async function main() {
   const ins2 = await db.saveInsight({ tenantId: tenant.id, month: "2026-09", content: { insights: [] }, model: "m2" });
   ok("insight upsert same row", ins2.id === ins1.id && ins2.model === "m2");
 
+  const pv1 = await db.createPromoVideo({ youtubeId: "dQw4w9WgXcQ", title: "T", lang: "ar", sort: 1, active: true });
+  ok("promo video save", !!pv1.id);
+  ok("promo list active", (await db.listPromoVideos(true)).some((x) => x.id === pv1.id));
+  await db.updatePromoVideo(pv1.id, { active: false });
+  ok("promo hidden when inactive", !(await db.listPromoVideos(true)).some((x) => x.id === pv1.id));
+  ok("promo list all", (await db.listPromoVideos()).some((x) => x.id === pv1.id));
+  await db.deletePromoVideo(pv1.id);
+  ok("promo delete", !(await db.listPromoVideos()).some((x) => x.id === pv1.id));
+
   console.log(failures === 0 ? "PG ALL GREEN" : `${failures} FAILURES`);
   process.exit(failures === 0 ? 0 : 1);
 }

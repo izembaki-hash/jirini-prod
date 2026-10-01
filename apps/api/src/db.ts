@@ -99,6 +99,12 @@ export interface LegalPageRow {
   id: string; key: string; lang: string; title: string; body: string; updatedAt: string;
 }
 
+// فيديو ترويجي (يوتيوب) — محتوى عام للمشغّل، يظهر في صفحة الهبوط
+export interface PromoVideoRow {
+  id: string; youtubeId: string; title: string; lang: string;
+  sort: number; active: boolean; createdAt: string;
+}
+
 // نصيحة شهرية واحدة من المستشار (بنية JSON مخزّنة في InsightRow.content)
 export type InsightSeverity = "danger" | "warn" | "info" | "good";
 export interface InsightItem { title: string; detail: string; severity: InsightSeverity }
@@ -225,6 +231,11 @@ export interface DbPort {
   // نصائح المستشار الشهرية (مستأجر/شهر واحد)
   getInsight(tenantId: string, month: string): Promise<InsightRow | null>;
   saveInsight(i: Omit<InsightRow, "id" | "createdAt">): Promise<InsightRow>;
+  // فيديوهات الهبوط الترويجية (عامة — مشغّل المنصة)
+  listPromoVideos(activeOnly?: boolean): Promise<PromoVideoRow[]>;
+  createPromoVideo(v: Omit<PromoVideoRow, "id" | "createdAt">): Promise<PromoVideoRow>;
+  updatePromoVideo(id: string, patch: Partial<Pick<PromoVideoRow, "title" | "sort" | "active">>): Promise<PromoVideoRow>;
+  deletePromoVideo(id: string): Promise<void>;
 }
 
 // ─── ذاكرة: تطوير محلي واختبارات — نفس العقد تماماً ───
@@ -608,6 +619,25 @@ export class MemoryAdapter implements DbPort {
     const row: InsightRow = { ...i, id: uid("ins"), createdAt: now() };
     this.insights.push(row);
     return row;
+  }
+  videos: PromoVideoRow[] = [];
+  async listPromoVideos(activeOnly?: boolean) {
+    const rows = [...this.videos].sort((a, b) => a.sort - b.sort);
+    return activeOnly ? rows.filter((x) => x.active) : rows;
+  }
+  async createPromoVideo(v: Omit<PromoVideoRow, "id" | "createdAt">) {
+    const row: PromoVideoRow = { ...v, id: uid("vid"), createdAt: now() };
+    this.videos.push(row);
+    return row;
+  }
+  async updatePromoVideo(id: string, patch: Partial<Pick<PromoVideoRow, "title" | "sort" | "active">>) {
+    const r = this.videos.find((x) => x.id === id);
+    if (!r) throw new Error("video");
+    Object.assign(r, patch);
+    return r;
+  }
+  async deletePromoVideo(id: string) {
+    this.videos = this.videos.filter((x) => x.id !== id);
   }
 }
 
@@ -1122,6 +1152,26 @@ export class PrismaAdapter implements DbPort {
       update: { content: i.content, model: i.model },
     }));
     return { ...row, createdAt: new Date(row.createdAt).toISOString() };
+  }
+  async listPromoVideos(activeOnly?: boolean) {
+    const rows = PrismaAdapter.row<PromoVideoRow[]>(await this.m("promoVideo").findMany({
+      ...(activeOnly ? { where: { active: true } } : {}),
+      orderBy: [{ sort: "asc" }, { createdAt: "asc" }],
+    }));
+    return rows.map((r) => ({ ...r, createdAt: new Date(r.createdAt).toISOString() }));
+  }
+  async createPromoVideo(v: Omit<PromoVideoRow, "id" | "createdAt">) {
+    const row = PrismaAdapter.row<PromoVideoRow>(await this.m("promoVideo").create({ data: v }));
+    return { ...row, createdAt: new Date(row.createdAt).toISOString() };
+  }
+  async updatePromoVideo(id: string, patch: Partial<Pick<PromoVideoRow, "title" | "sort" | "active">>) {
+    const cur = await this.m("promoVideo").findFirst({ where: { id } });
+    if (!cur) throw new Error("video");
+    const row = PrismaAdapter.row<PromoVideoRow>(await this.m("promoVideo").update({ where: { id }, data: patch }));
+    return { ...row, createdAt: new Date(row.createdAt).toISOString() };
+  }
+  async deletePromoVideo(id: string) {
+    await this.m("promoVideo").deleteMany({ where: { id } });
   }
   async getSubscription(tenantId: string) {
     return PrismaAdapter.row<SubscriptionRow | null>(

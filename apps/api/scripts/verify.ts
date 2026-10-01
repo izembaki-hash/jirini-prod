@@ -822,6 +822,43 @@ async function main() {
   r = await call("PUT", "/ops/legal/unknown", { lang: "ar", title: "x", body: "y" }, undefined, opH);
   ok("legal save unknown key → 404", r.status === 404);
 
+  // G: فيديوهات الهبوط — عامة للقراءة، والمشغّل يديرها
+  r = await call("GET", "/public/videos");
+  ok("public videos empty list", r.status === 200 && Array.isArray(r.json) && r.json.length === 0);
+  r = await call("POST", "/ops/videos", { url: "https://youtube.com/watch?v=dQw4w9WgXcQ", title: "x" }, undefined, { "x-operator-key": "wrong" });
+  ok("videos save wrong operator → 401", r.status === 401);
+  r = await call("POST", "/ops/videos", { url: "not-a-url", title: "xx" }, undefined, opH);
+  ok("videos bad url → 400", r.status === 400 && (r.json as { error: string }).error === "bad_youtube");
+  const vidForms = [
+    "dQw4w9WgXcQ",
+    "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "https://youtu.be/dQw4w9WgXcQ",
+    "https://www.youtube.com/shorts/dQw4w9WgXcQ",
+    "https://www.youtube.com/embed/dQw4w9WgXcQ",
+  ];
+  r = await call("POST", "/ops/videos", { url: vidForms[0], title: "تعريفي", lang: "ar", sort: 1 }, undefined, opH);
+  const vidId = (r.json as { id: string }).id;
+  ok("videos create → 201", r.status === 201 && (r.json as { youtubeId: string }).youtubeId === "dQw4w9WgXcQ" && !!vidId);
+  for (const f of vidForms.slice(1)) {
+    r = await call("POST", "/ops/videos", { url: f, title: "dup", lang: "ar" }, undefined, opH);
+    if (r.status !== 409) break;
+  }
+  ok("videos all url forms dedupe → 409", r.status === 409 && (r.json as { error: string }).error === "video_exists");
+  r = await call("POST", "/ops/videos", { url: vidForms[0], title: "fr", lang: "fr" }, undefined, opH);
+  ok("videos same id other lang ok", r.status === 201);
+  r = await call("PATCH", "/ops/videos/nope", { active: false }, undefined, opH);
+  ok("videos patch missing → 404", r.status === 404);
+  r = await call("PATCH", `/ops/videos/${vidId}`, { active: false }, undefined, opH);
+  ok("videos deactivate", r.status === 200 && (r.json as { active: boolean }).active === false);
+  r = await call("GET", "/public/videos");
+  ok("public hides inactive", r.status === 200 && !(r.json as { id: string }[]).some((v) => v.id === vidId));
+  r = await call("PATCH", `/ops/videos/${vidId}`, { active: true, sort: 2 }, undefined, opH);
+  ok("videos reactivate", r.status === 200);
+  r = await call("GET", "/public/videos");
+  ok("public shows active", r.status === 200 && (r.json as { id: string }[]).some((v) => v.id === vidId));
+  r = await call("DELETE", `/ops/videos/${vidId}`, undefined, undefined, opH);
+  ok("videos delete", r.status === 200);
+
   // F: مستشار الشهر (Groq) — المالك فقط + تخزين شهري
   r = await call("GET", "/insights/monthly", undefined, cashTok);
   ok("insights owner-only → 403", r.status === 403);

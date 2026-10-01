@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { fmtDzd, useStore } from "../store";
-import { API_BASE, ApiError, getOperatorKey, setOperatorKey, ops, type OpsOverview, type OpsTenant, type OpsSupportTicket, type LegalKey, type LegalLang } from "../api";
+import { API_BASE, ApiError, getOperatorKey, setOperatorKey, ops, type ApiPromoVideo, type OpsOverview, type OpsTenant, type OpsSupportTicket, type LegalKey, type LegalLang } from "../api";
 import { t, type Lang } from "../i18n";
 import { errMsg } from "../lib/err";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Empty, Field, Input, Segmented, Stat } from "../ui";
@@ -12,7 +12,7 @@ function opsErr(L: Lang, e: unknown) {
 
 // لوحة مشغّل المنصة: كل المستأجرين والمستخدمين والمدفوعات + إجراءات.
 // مستقلة عن Shell (مستوى المنصة لا المستأجر). تتطلب API + مفتاح المشغّل.
-type Tab = "overview" | "tenants" | "payments" | "support" | "legal" | "system";
+type Tab = "overview" | "tenants" | "payments" | "support" | "legal" | "videos" | "system";
 
 export default function Ops() {
   const { s } = useStore();
@@ -68,14 +68,15 @@ export default function Ops() {
           {t(L, "logoutOp")}
         </button>
       </header>
-      <div className="w-full sm:w-96">
-        <Segmented label="tabs" value={tab}
+      <div className="w-full overflow-x-auto">
+        <Segmented label="tabs" value={tab} className="min-w-max"
           options={[
             { value: "overview", label: t(L, "tabOverview") },
             { value: "tenants", label: t(L, "tabTenants") },
             { value: "payments", label: t(L, "tabPayments") },
             { value: "support", label: t(L, "tabSupport") },
             { value: "legal", label: t(L, "tabLegal") },
+            { value: "videos", label: t(L, "tabVideos") },
             { value: "system", label: t(L, "tabSystem") },
           ]}
           onChange={setTab} />
@@ -85,6 +86,7 @@ export default function Ops() {
       {tab === "payments" && <PaymentsTab />}
       {tab === "support" && <SupportTab />}
       {tab === "legal" && <LegalTab />}
+      {tab === "videos" && <VideosTab />}
       {tab === "system" && <SystemTab />}
     </div>
   );
@@ -450,6 +452,109 @@ function LegalTab() {
             </div>
           </CardContent>
         </Card>
+      )}
+    </div>
+  );
+}
+
+function VideosTab() {
+  const { s } = useStore();
+  const L = s.lang;
+  const [list, setList] = useState<ApiPromoVideo[] | null>(null);
+  const [url, setUrl] = useState("");
+  const [title, setTitle] = useState("");
+  const [lang, setLang] = useState<"ar" | "fr">("ar");
+  const [sort, setSort] = useState("0");
+  const [busy, setBusy] = useState(false);
+  const load = () => ops.videosList().then(setList).catch((e) => opsErr(L, e));
+  useEffect(() => { load(); }, []);
+
+  const add = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!url.trim() || !title.trim()) return;
+    setBusy(true);
+    try {
+      await ops.videoCreate({ url: url.trim(), title: title.trim(), lang, sort: Math.max(0, Number(sort) || 0) });
+      setUrl(""); setTitle("");
+      toast.success(t(L, "vidSaved"));
+      load();
+    } catch (ex) { opsErr(L, ex); } finally { setBusy(false); }
+  };
+  const upd = async (id: string, patch: { title?: string; sort?: number; active?: boolean }) => {
+    try {
+      await ops.videoUpdate(id, patch);
+      toast.success(t(L, "vidSaved"));
+      load();
+    } catch (ex) { opsErr(L, ex); }
+  };
+  const del = async (id: string) => {
+    try {
+      await ops.videoDelete(id);
+      toast.success(t(L, "vidDeleted"));
+      load();
+    } catch (ex) { opsErr(L, ex); }
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-sm text-muted">{t(L, "vidHint")}</p>
+      <Card>
+        <CardContent className="flex flex-col gap-3 p-4">
+          <form onSubmit={add} className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_auto_auto_auto]">
+            <Field label={t(L, "vidUrl")} id="vd-url">
+              <Input id="vd-url" value={url} onChange={(e) => setUrl(e.target.value)} dir="ltr"
+                placeholder="https://youtube.com/watch?v=…" autoComplete="off" />
+            </Field>
+            <Field label={t(L, "vidName")} id="vd-title">
+              <Input id="vd-title" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} />
+            </Field>
+            <Field label={L === "ar" ? "اللغة" : "Langue"} id="vd-lang">
+              <select id="vd-lang" value={lang} onChange={(e) => setLang(e.target.value as "ar" | "fr")}
+                className="h-11 rounded-[10px] border border-line bg-surface px-3 text-sm font-semibold">
+                <option value="ar">عربي</option>
+                <option value="fr">Français</option>
+              </select>
+            </Field>
+            <Field label={t(L, "vidSort")} id="vd-sort">
+              <Input id="vd-sort" value={sort} onChange={(e) => setSort(e.target.value)} inputMode="numeric" dir="ltr" className="w-20" />
+            </Field>
+            <div className="flex items-end">
+              <Button type="submit" loading={busy} disabled={!url.trim() || !title.trim()}>{t(L, "vidAdd")}</Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+      {list === null ? <p className="text-sm text-muted">…</p> : list.length === 0 ? (
+        <p className="text-sm text-muted">{t(L, "vidEmpty")}</p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {list.map((v) => (
+            <Card key={v.id}>
+              <CardContent className="flex items-center gap-3 p-3">
+                <img src={`https://i.ytimg.com/vi/${v.youtubeId}/default.jpg`} alt="" loading="lazy"
+                  className="h-12 w-20 shrink-0 rounded-lg object-cover" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold">{v.title}</p>
+                  <p className="text-xs text-muted">
+                    <Badge tone={v.active ? "ok" : "neutral"}>{v.active ? t(L, "vidActive") : t(L, "vidOff")}</Badge>
+                    {" · "}{v.lang} · #{v.sort}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Input defaultValue={v.sort} inputMode="numeric" dir="ltr" aria-label={t(L, "vidSort")}
+                    className="w-16" onBlur={(e) => {
+                      const n = Math.max(0, Number(e.target.value) || 0);
+                      if (n !== v.sort) upd(v.id, { sort: n });
+                    }} />
+                  <Button size="sm" variant="outline" onClick={() => upd(v.id, { active: !v.active })}>
+                    {v.active ? t(L, "vidDeactivate") : t(L, "vidActivate")}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => del(v.id)}>{t(L, "vidDelete")}</Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       )}
     </div>
   );

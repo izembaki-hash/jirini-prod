@@ -205,6 +205,13 @@ export async function buildApp(db?: DbPort) {
     } catch (e) { next(e); }
   });
 
+  // فيديوهات الهبوط الترويجية — قراءة عامة (يوتيوب فقط، يُخزَّن المعرّف لا الملف)
+  app.get("/public/videos", publicLimit, async (_req, res, next) => {
+    try {
+      res.json(await dbx.listPromoVideos(true));
+    } catch (e) { next(e); }
+  });
+
   app.post("/public/signup", signupLimit, async (req, res, next) => {
     try {
       const b = z.object({
@@ -1210,6 +1217,62 @@ export async function buildApp(db?: DbPort) {
     } catch (e) { next(e); }
   });
 
+  // استخراج معرّف يوتيوب (11 حرفاً) من كل الصيغ: watch?v= / youtu.be/ / shorts/ / embed/ / live/ / خام
+  function youtubeIdOf(input: string): string | null {
+    const s = input.trim();
+    const direct = /^[A-Za-z0-9_-]{11}$/.exec(s);
+    if (direct) return direct[0];
+    const m = /(?:youtube\.com\/(?:watch\?[^#]*v=|shorts\/|embed\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/.exec(s);
+    return m ? m[1] : null;
+  }
+
+  // إدارة فيديوهات الهبوط (المشغّل فقط) — القائمة الكاملة تشمل المعطّلة
+  app.get("/ops/videos", requireOperator, sensitiveLimit, async (_req, res, next) => {
+    try {
+      res.json(await dbx.listPromoVideos());
+    } catch (e) { next(e); }
+  });
+
+  app.post("/ops/videos", requireOperator, sensitiveLimit, async (req, res, next) => {
+    try {
+      const b = z.object({
+        url: z.string().min(5).max(500),
+        title: z.string().trim().min(2).max(120),
+        lang: z.enum(["ar", "fr"]).default("ar"),
+        sort: z.number().int().min(0).max(999).default(0),
+      }).parse(req.body);
+      const youtubeId = youtubeIdOf(b.url);
+      if (!youtubeId) { res.status(400).json({ error: "bad_youtube" }); return; }
+      const dup = (await dbx.listPromoVideos()).some((v) => v.youtubeId === youtubeId && v.lang === b.lang);
+      if (dup) { res.status(409).json({ error: "video_exists" }); return; }
+      res.status(201).json(await dbx.createPromoVideo({
+        youtubeId, title: b.title.trim(), lang: b.lang, sort: b.sort, active: true,
+      }));
+    } catch (e) { next(e); }
+  });
+
+  app.patch("/ops/videos/:id", requireOperator, sensitiveLimit, async (req, res, next) => {
+    try {
+      const b = z.object({
+        title: z.string().trim().min(2).max(120).optional(),
+        sort: z.number().int().min(0).max(999).optional(),
+        active: z.boolean().optional(),
+      }).parse(req.body);
+      const cur = (await dbx.listPromoVideos()).find((v) => v.id === req.params.id);
+      if (!cur) { res.status(404).json({ error: "not_found", entity: "video" }); return; }
+      res.json(await dbx.updatePromoVideo(req.params.id, b));
+    } catch (e) { next(e); }
+  });
+
+  app.delete("/ops/videos/:id", requireOperator, sensitiveLimit, async (req, res, next) => {
+    try {
+      const cur = (await dbx.listPromoVideos()).find((v) => v.id === req.params.id);
+      if (!cur) { res.status(404).json({ error: "not_found", entity: "video" }); return; }
+      await dbx.deletePromoVideo(req.params.id);
+      res.json({ ok: true });
+    } catch (e) { next(e); }
+  });
+
   app.get("/ops/overview", requireOperator, sensitiveLimit, async (_req, res, next) => {
     try {
       const [tenants, users] = await Promise.all([dbx.listTenants(), dbx.listAllUsers()]);
@@ -1816,7 +1879,7 @@ export async function buildApp(db?: DbPort) {
       const m = typeof e.meta?.model === "string" ? e.meta.model.toLowerCase() : undefined;
       res.status(404).json({ error: "not_found", ...(m ? { entity: m } : {}) }); return;
     }
-    const entities = ["product", "order", "shift", "goal", "recipe", "supplier", "purchase", "driver", "tenant", "payment", "overhead", "customer", "employee", "user", "branch"];
+    const entities = ["product", "order", "shift", "goal", "recipe", "supplier", "purchase", "driver", "tenant", "payment", "overhead", "customer", "employee", "user", "branch", "video"];
     if (e.message && entities.includes(e.message)) {
       res.status(404).json({ error: "not_found", entity: e.message }); return;
     }
