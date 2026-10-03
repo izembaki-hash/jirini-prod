@@ -4,7 +4,7 @@ import { useLocation } from "react-router-dom";
 // بكسل Meta للإعلانات — يُحمَّل برمجياً لأن CSP تمنع السكربتات الداخلية.
 // المعرف ثابت (بكسل تسويقي واحد للمنصة). كل الاستدعاءات صامتة الفشل
 // (مانع إعلانات / توقيت) حتى لا تكسر التطبيق أبداً.
-export const META_PIXEL_ID = "1606670057532955";
+export const META_PIXEL_ID = "1399868645661992";
 
 type FbqFn = ((...args: unknown[]) => void) & {
   queue?: unknown[][];
