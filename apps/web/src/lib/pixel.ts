@@ -12,7 +12,10 @@ type FbqFn = ((...args: unknown[]) => void) & {
 };
 
 const w = () =>
-  (typeof window === "undefined" ? {} : window) as unknown as { fbq?: FbqFn };
+  (typeof window === "undefined" ? {} : window) as unknown as {
+    fbq?: FbqFn;
+    _fbq?: FbqFn;
+  };
 
 let inited = false;
 export function initPixel() {
@@ -30,6 +33,8 @@ export function initPixel() {
     }) as FbqFn;
     fbq.queue = [];
     win.fbq = fbq;
+    // كما في السنيبت الرسمي: _fbq يمنع تحذير Meta "conflicting versions".
+    if (!win._fbq) win._fbq = fbq;
     const s = document.createElement("script");
     s.async = true;
     s.src = "https://connect.facebook.net/en_US/fbevents.js";
